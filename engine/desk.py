@@ -1028,7 +1028,7 @@ def step2_prompt(pack, assets, session):
           "Supply & demand-logica: een short-idee hoort bij een supply-zone BOVEN de koers, na een sweep van de highs boven die zone en een break naar beneden. "
           "Een long-idee hoort bij een demand-zone ONDER de koers, na een sweep van de lows eronder en een break omhoog.",
           "Velden per markt:",
-          "- call: begint met het label van die markt hierboven, dan de zone die ertoe doet, in de vorm "
+          "- call: begint met het label van die markt hierboven (zoals Licht bearish), niet met de naam van de markt, dan de zone die ertoe doet, in de vorm "
           "'<label> zolang <level> (supply) houdt; pas daarboven nemen kopers het over.' of '<label> zolang <level> (demand) houdt; pas daaronder nemen verkopers het over.' "
           "Gebruik alleen getallen uit de levels van die markt. Geen order met entry en target.",
           "- thesis: waarom, met de twee of drie zwaarste factoren en hun richting zoals in de factorregels.",
@@ -1047,17 +1047,22 @@ def step2_prompt(pack, assets, session):
 
 
 LABEL_RE = re.compile(r"^\s*(licht\s+bullish|licht\s+bearish|bullish|bearish|neutraal)\b[\s:,;.\-–]*", re.I)
+LEAD_RE = re.compile(r"^\s*(xauusd|xau/usd|goud|us500|us100|s&p\s*500|nasdaq(\s*100)?)\b[\s:,;.\-–]*", re.I)
+SOFT_START = ("zolang", "onder", "boven", "tot", "zodra", "pas", "met", "bij", "zonder")
 
 
 def fix_texts(a):
-    """Vangnet voor de AI-tekst: het label in de call moet het berekende label zijn, en een
-    moveNote mag alleen bestaan als de koers van vandaag echt tegen een duidelijke bias ingaat."""
+    """Vangnet voor de AI-tekst: de call begint met het berekende label (niet met de marktnaam of een ander
+    label), en een moveNote mag alleen bestaan als de koers van vandaag echt tegen een duidelijke bias ingaat."""
     lab = label(a["score"])
     call = a.get("call")
-    if isinstance(call, str) and call:
-        m = LABEL_RE.match(call)
-        rest = call[m.end():] if m else call
-        a["call"] = f"{lab}: {rest[:1].lower() + rest[1:]}" if not m else f"{lab} {rest}" if rest[:1].islower() else f"{lab}: {rest}"
+    if isinstance(call, str) and call.strip():
+        rest = call.strip()
+        for _ in range(2):  # marktnaam en/of label vooraan weghalen, in elke volgorde
+            rest = LEAD_RE.sub("", rest, count=1)
+            rest = LABEL_RE.sub("", rest, count=1)
+        first = rest.split(" ", 1)[0].lower()
+        a["call"] = f"{lab} {first}{rest[len(first):]}" if first in SOFT_START else f"{lab}: {rest}" if rest else lab
     cp = a.get("chgPct")
     against = cp is not None and abs(a["score"]) >= 15 and abs(cp) >= 0.25 and (cp > 0) != (a["score"] > 0)
     if not against:
