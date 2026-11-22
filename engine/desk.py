@@ -942,7 +942,7 @@ def ai_json(system, user, max_tokens=3500):
 
 SYSTEM = ("Je bent de macro-analist van KAIROS, een bias-desk voor een supply-and-demand daytrader in Brussel die XAUUSD (goud), "
           "US500 en US100 handelt, vooral in de New York-sessie. Werk alleen met de gegeven data en koppen. Verzin nooit cijfers, "
-          "niveaus of feiten. Schrijf alle tekst in helder Nederlands, kort en zonder markdown. Antwoord met één JSON-object en niets anders.")
+          "niveaus of feiten. Schrijf alle tekst in helder Nederlands (goud, niet gold), kort en zonder markdown. Antwoord met één JSON-object en niets anders.")
 
 
 # ---------------------------------------------------------------- run
@@ -1028,9 +1028,9 @@ def step2_prompt(pack, assets, session):
           "Supply & demand-logica: een short-idee hoort bij een supply-zone BOVEN de koers, na een sweep van de highs boven die zone en een break naar beneden. "
           "Een long-idee hoort bij een demand-zone ONDER de koers, na een sweep van de lows eronder en een break omhoog.",
           "Velden per markt:",
-          "- call: begint met het label van die markt hierboven (bijvoorbeeld 'Neutraal' of 'Licht bearish'), dan de zone die ertoe doet, "
-          "bijvoorbeeld 'Licht bearish zolang 3.657 (supply) houdt; pas boven 3.700 nemen kopers het over.' Boven een supply-zone nemen kopers het over, "
-          "onder een demand-zone verkopers. Geen order met entry en target.",
+          "- call: begint met het label van die markt hierboven, dan de zone die ertoe doet, in de vorm "
+          "'<label> zolang <level> (supply) houdt; pas daarboven nemen kopers het over.' of '<label> zolang <level> (demand) houdt; pas daaronder nemen verkopers het over.' "
+          "Gebruik alleen getallen uit de levels van die markt. Geen order met entry en target.",
           "- thesis: waarom, met de twee of drie zwaarste factoren en hun richting zoals in de factorregels.",
           "- flip: wat de bias laat omslaan (een level of een event).",
           "- risk: het grootste risico voor deze bias (een cijfer, event of level). Geen advies over positiegrootte of stop-loss.",
@@ -1038,6 +1038,7 @@ def step2_prompt(pack, assets, session):
           "killzones Londen 08:00-11:00 en New York 13:00-16:00 Brusselse tijd, en wanneer je aan de kant blijft. Geen garanties.",
           "- moveNote: alleen als de beweging van vandaag minstens 0,25% tegen een bias van ±15 of meer ingaat, anders null.",
           "- headline: één zin over wat de markt nu drijft, in gewoon Nederlands, zonder labels zoals bullish of bearish.",
+          "- regime: label is het marktregime in twee tot vier woorden (bijvoorbeeld Risk-off, Risk-on, Afwachten op data, Rente-gedreven), tone -1, 0 of 1.",
           'JSON-vorm: {"headline":"max 140 tekens","summary":["3 zinnen van max 130 tekens"],"regime":{"label":"max 40 tekens","tone":-1,"text":"max 240 tekens"},'
           '"assets":{"XAUUSD":{"call":"max 120","thesis":"max 320","flip":"max 160","risk":"max 140","playbook":"max 260","moveNote":null},'
           '"US500":{"call":"","thesis":"","flip":"","risk":"","playbook":"","moveNote":null},"US100":{"call":"","thesis":"","flip":"","risk":"","playbook":"","moveNote":null}},'
