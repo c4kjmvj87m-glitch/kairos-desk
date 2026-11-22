@@ -2,7 +2,7 @@ name: KAIROS desk-run
 
 on:
   schedule:
-    - cron: "46 7,13,22 * * 1-5"
+    - cron: "15 7,13,22 * * 1-5"
       timezone: "Europe/Brussels"
   workflow_dispatch:
 
@@ -26,7 +26,8 @@ jobs:
           KAIROS_CLAUDE_MODEL: ${{ vars.KAIROS_CLAUDE_MODEL }}
           KAIROS_GEMINI_MODEL: ${{ vars.KAIROS_GEMINI_MODEL }}
           KAIROS_GROQ_MODEL: ${{ vars.KAIROS_GROQ_MODEL }}
-        run: python3 engine/desk.py
+          KAIROS_SEARCHES: ${{ vars.KAIROS_SEARCHES }}
+        run: python3 engine/kairos.py
       - name: Desk opslaan
         run: |
           git config user.name "kairos-desk-bot"
