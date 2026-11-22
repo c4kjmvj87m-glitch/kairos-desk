@@ -1,36 +1,46 @@
 # KAIROS Macro Desk
 
-Macro-bias-desk voor XAUUSD, US500 en US100. Draait gratis op GitHub, zonder Claude-abonnement.
+Je KAIROS-desk, los van het Claude-abonnement. De pagina is een exacte kopie van de desk in Claude: dezelfde code, hetzelfde uiterlijk en dezelfde onderdelen.
 
 - **App:** https://c4kjmvj87m-glitch.github.io/kairos-desk/ (zet hem op het beginscherm van je telefoon)
-- **Verversen:** de workflow *KAIROS desk-run* draait op werkdagen om 07:46, 13:46 en 22:46 (Brusselse tijd).
-- **Koersen:** Yahoo Finance; goud en zilver als spotprijs via Swissquote (de niveaus komen uit de COMEX-future, omgerekend naar spot).
-- **Analyse:** een AI-model schrijft het oordeel en de uitleg. Daarvoor zet je één sleutel als GitHub-secret (zie hieronder). Zonder sleutel draait de desk op de rekenregels alleen.
+- **Verversen:** de workflow *KAIROS desk-run* draait op werkdagen om 07:15, 13:15 en 22:15 (Brusselse tijd), net als in Claude. Het scherm ververst vanzelf.
 
-## AI aanzetten (één keer, 5 minuten)
+## Hoe het werkt
 
-Kies één van deze drie. Zet de sleutel altijd alleen in GitHub, nooit in een chat of in een bestand.
+| Onderdeel | Bron |
+|---|---|
+| Goud | spotprijs van Swissquote; kaarsen van het actiefste COMEX-contract, omgerekend naar spot met het verschil van dat moment |
+| S&P 500 en Nasdaq 100 | de index (Yahoo); buiten de beurstijden de future, omgerekend zoals een CFD |
+| Zones en plannen | berekend uit de M15- en H1-kaarsen: basis met een sterke departure, alleen verse zones |
+| Dollar, rente, olie, zilver, valuta | Yahoo Finance en het Amerikaanse ministerie van Financiën |
+| Fed-kans | berekend uit de fed-funds-futures, rente van de NY Fed, vergaderdata van de Fed |
+| Agenda | ForexFactory |
+| Nieuws en stemming | Google News, CNN Fear & Greed, Stocktwits |
+| Berichten op X | Claude zoekt ze op internet (4 zoekopdrachten per run) |
+| Teksten, plannen, les en quiz | Claude Haiku 5.5, in hetzelfde eenvoudige Nederlands als in Claude |
 
-| Secret-naam | Dienst | Kosten | Sleutel maken |
-|---|---|---|---|
-| `GROQ_API_KEY` | Groq (gpt-oss-120b) | gratis, geen creditcard | https://console.groq.com/keys |
-| `ANTHROPIC_API_KEY` | Claude Haiku 5.5 | minder dan € 0,50 per maand, vooraf tegoed kopen | https://platform.claude.com (API keys) |
-| `GEMINI_API_KEY` | Google Gemini | gratis zolang Google je project een gratis tier geeft | https://aistudio.google.com/apikey |
+**Kosten:** ongeveer € 3,50 per maand aan Claude-tegoed (ongeveer 5 cent per run). Zonder zoeken op X zet je de variabele `KAIROS_SEARCHES` op `0` (Settings → Secrets and variables → Actions → Variables). Dan kost het ongeveer € 1 per maand.
 
-Sleutel in GitHub zetten: **Settings → Secrets and variables → Actions → New repository secret**, vul de naam uit de tabel in, plak de sleutel bij *Secret* en klik *Add secret*.
+## Sleutels (Settings → Secrets and variables → Actions)
 
-Heb je er meer dan één, dan gebruikt de desk eerst Claude, dan Gemini, dan Groq.
+| Secret | Waarvoor |
+|---|---|
+| `ANTHROPIC_API_KEY` | Claude: de analyse, de teksten en het zoeken op X |
+| `GROQ_API_KEY` | gratis reserve als Claude niet werkt (alleen de korte analyse) |
 
-## Zelf doen
+Zet een sleutel nooit in een chat of in een bestand.
 
-- **Nu verversen:** Actions → *KAIROS desk-run* → *Run workflow*.
-- **Ander model (optioneel):** Settings → Secrets and variables → Actions → *Variables*: `KAIROS_GROQ_MODEL`, `KAIROS_GEMINI_MODEL` of `KAIROS_CLAUDE_MODEL`.
-- **Schema uitgeschakeld?** GitHub kan geplande workflows in een openbaar project stilzetten na 60 dagen zonder activiteit. Zet hem dan terug aan onder Actions.
+## Op je toestel
+
+- **Je naam in de begroeting:** open de app één keer met `?naam=JouwNaam` achter de link.
+- **Vraag de desk:** bij je eerste vraag plak je een Claude-sleutel. Die blijft alleen op dat toestel en gaat alleen naar Claude. Je mag hiervoor een aparte sleutel maken.
+- **Logboek:** je trades blijven op het toestel waar je ze invoert.
+- **Voorlezen:** gebruikt de stem van je toestel.
 
 ## Bestanden
 
-- `index.html`: de app (werkt ook offline met de laatste desk).
-- `engine/desk.py`: haalt de data op, rekent het factormodel uit en schrijft `data/desk.json` en `data/runs.json`.
-- `.github/workflows/`: het schema (`desk.yml`) en het publiceren van de app (`pages.yml`).
+- `index.html`: de kopie van de Claude-desk, gemaakt met `tools/sync_page.py`.
+- `kairos-shim.js`: vervangt wat Claude levert (database, naam, logboek, voorlezen, Vraag de desk).
+- `engine/kairos.py`: de desk-run; schrijft `data/desk.json`, `data/runs.json` en `data/state.json`. `engine/desk.py` bevat de bouwstenen.
 
-Geen financieel advies. Koersen zijn momentopnames en lopen achter op je broker.
+Geen financieel advies. Koersen lopen achter op je broker: controleer ze in MT5 en trade nooit zonder stop.
