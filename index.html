@@ -1,0 +1,1273 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="KAIROS">
+<meta name="description" content="Macro bias desk voor XAUUSD, US500 en US100">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>KAIROS Macro Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@400;500;600&family=Chakra+Petch:wght@500;600;700&display=swap">
+<style>
+:root{
+  /* Cockpit: a status rail with the trading day, the desk read beside the next catalyst, three lean meters, then a quiet lower deck. */
+  --void:#000;
+  --plate:#090B0E;
+  --seam:#1A1F26;
+  --ink:#E8ECEF;
+  --mist:#8F99A4;
+  --smoke:#4A535D;
+  --aurum:#F2B630;
+  --bull:#2FE39B;
+  --bear:#FF5470;
+  --flat:#A3ADB8;
+  --pulse:#76A9FF;
+  --f-display:"Chakra Petch","Barlow Semi Condensed",ui-sans-serif,system-ui,sans-serif;
+  --f-body:"Barlow",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-data:"Barlow Semi Condensed","Barlow",ui-sans-serif,system-ui,sans-serif;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+html{background:var(--void);-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100%;background:var(--void);color:var(--ink);font:400 15px/1.5 var(--f-body);-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;background-image:radial-gradient(rgba(255,255,255,.06) 1px,transparent 1.3px);background-size:22px 22px;-webkit-mask-image:radial-gradient(ellipse 90% 60% at 50% 0%,#000 25%,transparent 80%);mask-image:radial-gradient(ellipse 90% 60% at 50% 0%,#000 25%,transparent 80%)}
+h1,h2,h3,h4{margin:0;font-family:var(--f-display);font-weight:600;letter-spacing:.01em;text-wrap:balance}
+p{margin:0}
+a{color:inherit}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--aurum);outline-offset:2px}
+.num{font-family:var(--f-data);font-variant-numeric:tabular-nums}
+.up{color:var(--bull)}.dn{color:var(--bear)}.fl{color:var(--flat)}
+.mist{color:var(--mist)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- rail ---------- */
+.rail{position:sticky;top:0;z-index:30;padding-top:env(safe-area-inset-top,0px);background:rgba(0,0,0,.84);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border-bottom:1px solid var(--seam)}
+.rail-in{max-width:1440px;margin:0 auto;padding:10px 20px;display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;grid-template-areas:"brand day fresh ask";gap:22px;align-items:center}
+.brand{grid-area:brand;display:flex;align-items:center;gap:10px}
+.brand svg{width:30px;height:30px;flex:none}
+.brand b{display:block;font:700 18px/1 var(--f-display);letter-spacing:.2em}
+.brand small{display:block;font:500 11.5px/1 var(--f-body);color:var(--mist);margin-top:4px}
+.day{grid-area:day;min-width:0}
+.day-top{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:var(--mist);margin-bottom:5px;white-space:nowrap}
+.day-top b{color:var(--ink);font-weight:600}
+.day-top .clock{font-family:var(--f-data);font-variant-numeric:tabular-nums;color:var(--ink)}
+.track{position:relative;height:20px;background:#06080B;border:1px solid var(--seam);overflow:hidden}
+.seg{position:absolute;top:0;bottom:0;overflow:hidden}
+.seg.asia{background:rgba(118,169,255,.11)}
+.seg.lon{background:rgba(242,182,48,.12)}
+.seg.ny{background:rgba(47,227,155,.10)}
+.seg .lbl{position:absolute;left:6px;top:50%;transform:translateY(-50%);font:500 10.5px/1 var(--f-data);color:#AEB7C0;white-space:nowrap}
+.kz{position:absolute;bottom:0;height:3px;background:var(--aurum);opacity:.8}
+.evt{position:absolute;top:3px;bottom:3px;width:2px;margin-left:-1px;background:rgba(118,169,255,.7)}
+.evt.hi{background:var(--pulse);box-shadow:0 0 6px var(--pulse)}
+.nowc{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--ink);box-shadow:0 0 8px rgba(255,255,255,.7)}
+.hours{position:relative;height:12px;margin-top:3px;font:400 10px/1 var(--f-data);color:var(--smoke)}
+.hours span{position:absolute;transform:translateX(-50%)}
+.hours span:first-child{transform:none}.hours span:last-child{transform:translateX(-100%)}
+.fresh{grid-area:fresh;display:flex;align-items:center;gap:10px;font-size:12.5px;line-height:1.35;white-space:nowrap;min-width:0;overflow:hidden}
+.btn.fab{display:none;position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:40;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+.fresh b{font-weight:600}
+.dot{width:9px;height:9px;border-radius:50%;flex:none;background:var(--smoke)}
+.dot.live{background:var(--bull);box-shadow:0 0 10px var(--bull)}
+.dot.warn{background:var(--aurum);box-shadow:0 0 10px rgba(242,182,48,.7)}
+.dot.err{background:var(--bear)}
+.btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--aurum);background:transparent;color:var(--aurum);padding:9px 14px;font:600 13.5px/1 var(--f-display);letter-spacing:.03em;cursor:pointer;white-space:nowrap;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%)}
+.btn:hover{background:rgba(242,182,48,.1)}
+.btn.solid{background:var(--aurum);color:#000}
+.btn.solid:hover{background:#ffc94d}
+.btn:disabled{opacity:.45;cursor:default}
+.ask-btn{grid-area:ask}
+.ask-btn kbd{font:500 11px/1 var(--f-data);border:1px solid rgba(242,182,48,.45);padding:2px 5px;color:rgba(242,182,48,.85)}
+
+/* ---------- main ---------- */
+main{position:relative;z-index:1;max-width:1440px;margin:0 auto;padding:24px 20px calc(72px + env(safe-area-inset-bottom,0px))}
+.state{border:1px dashed var(--seam);padding:22px;color:var(--mist);font-size:14.5px;max-width:70ch}
+.state b{color:var(--ink);display:block;font:600 16px/1.3 var(--f-display);margin-bottom:6px}
+
+.hero{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(290px,1fr);gap:22px;margin-bottom:28px;align-items:start}
+.when{font-size:13px;color:var(--mist);margin-bottom:8px}
+.read h1{font-size:clamp(25px,2.5vw,35px);line-height:1.14;max-width:34ch}
+.regime{display:inline-flex;gap:8px;align-items:center;margin:14px 0 0;padding:6px 10px;border:1px solid var(--seam);font-size:13px;color:var(--mist)}
+.regime b{color:var(--ink);font-weight:600}
+.regime i{width:7px;height:7px;border-radius:50%;background:var(--flat)}
+.regime.t-up i{background:var(--bull)}.regime.t-dn i{background:var(--bear)}
+.rg-text{color:#C2CAD1;font-size:14px;margin-top:10px;max-width:72ch}
+.drivers{list-style:none;margin:16px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.drivers li{border-top:1px solid var(--seam);padding-top:10px;font-size:14px;line-height:1.45;color:#CDD3D9}
+
+.cat{position:relative;padding:16px 18px 18px;background:var(--plate);border:1px solid var(--seam);border-top:2px solid var(--pulse)}
+.cat h2{font:500 13px/1 var(--f-body);color:var(--mist)}
+.cat .ev{font:600 22px/1.2 var(--f-display);margin:10px 0 3px}
+.cat .t{font-size:13.5px;color:var(--mist)}
+.cd{font:600 36px/1 var(--f-data);font-variant-numeric:tabular-nums;color:var(--pulse);margin:14px 0 12px;letter-spacing:.02em}
+.vals3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0}
+.vals3 div{border-left:1px solid var(--seam);padding-left:8px}
+.vals3 dt{font-size:11.5px;color:var(--mist)}
+.vals3 dd{margin:2px 0 0;font:600 15px/1.2 var(--f-data);font-variant-numeric:tabular-nums}
+.cat-note{font-size:13px;color:#C2CAD1;margin-top:12px}
+.hits{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.hit{font:600 11px/1 var(--f-data);padding:4px 6px;border:1px solid var(--seam);color:var(--mist)}
+
+/* ---------- meters ---------- */
+.sec-h{display:flex;justify-content:space-between;align-items:baseline;gap:6px 16px;flex-wrap:wrap;margin-bottom:12px}
+.sec-h h2{font-size:19px}
+.sec-h p{color:var(--mist);font-size:13.5px}
+.meters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:stretch}
+.meter{--c:var(--flat);position:relative;background:var(--plate);border:1px solid var(--seam);padding:16px 18px 18px;clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,0 100%)}
+.meter::after{content:"";position:absolute;top:-1px;right:-1px;width:18px;height:18px;background:linear-gradient(to top right,transparent calc(50% - 1px),var(--seam) calc(50% - 1px),var(--seam) 50%,transparent 50%)}
+.meter.bull{--c:var(--bull)}.meter.bear{--c:var(--bear)}
+.meter::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,var(--c),transparent 70%);opacity:.8}
+.m-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:0}
+.m-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.tk{font:600 15px/1 var(--f-display);letter-spacing:.07em}
+.nm{display:block;color:var(--mist);font-size:12.5px;margin-top:5px}
+.pxb{text-align:right}
+.pv{font:600 23px/1 var(--f-data);font-variant-numeric:tabular-nums}
+.ch{font:500 13.5px/1.2 var(--f-data);font-variant-numeric:tabular-nums;margin-top:5px}
+.at{display:block;font-size:11.5px;color:var(--mist);margin-top:3px}
+.gauge{display:grid;grid-template-columns:136px minmax(0,1fr);gap:16px;align-items:center;margin:14px 0 14px}
+.gauge svg{width:136px;height:136px;display:block;overflow:visible;color:var(--c)}
+.bias{display:inline-block;font:600 13px/1 var(--f-display);letter-spacing:.04em;padding:6px 9px;border:1px solid var(--c);color:var(--c)}
+.score{font:700 50px/1 var(--f-display);margin:10px 0 8px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.score small{font:500 12px/1 var(--f-body);color:var(--mist);margin-left:6px;letter-spacing:0}
+.conf{font-size:13px;color:var(--mist)}
+.conf b{color:var(--ink);font:600 14px/1 var(--f-data)}
+.cbar{display:flex;gap:2px;margin-top:6px}
+.cbar i{flex:1;height:5px;background:#161A20}
+.cbar i.on{background:var(--c)}
+.delta{font-size:12px;color:var(--mist);margin-top:8px}
+.call{font:500 16px/1.42 var(--f-body);color:var(--ink);border-left:2px solid var(--c);padding:1px 0 1px 12px;margin-bottom:16px}
+.thesis{font-size:13.5px;color:#C2CAD1;margin:-6px 0 16px}
+.blk-h{font:500 12.5px/1 var(--f-body);color:var(--mist);margin:0 0 6px;display:flex;justify-content:space-between;gap:8px}
+.fl-list{list-style:none;margin:0 0 6px;padding:0}
+.frow{width:100%;display:grid;grid-template-columns:minmax(0,118px) minmax(0,1fr) 30px;gap:10px;align-items:center;background:none;border:0;padding:5px 0;cursor:pointer;text-align:left}
+.frow:hover .lb{color:var(--ink)}
+.frow .lb{font-size:13px;color:#C9D0D6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow .lb.stale{color:var(--smoke)}
+.frow .lb::before{content:"+";display:inline-block;width:12px;color:var(--smoke);font-family:var(--f-data)}
+.frow[aria-expanded="true"] .lb::before{content:"−"}
+.fbar{position:relative;height:8px;background:#0E1116}
+.fbar::before{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--smoke)}
+.fbar i{position:absolute;top:0;bottom:0}
+.fbar i.p{left:50%;background:var(--bull)}
+.fbar i.n{right:50%;background:var(--bear)}
+.fv{font:600 12.5px/1 var(--f-data);text-align:right;font-variant-numeric:tabular-nums}
+.fwhy{font-size:13px;color:#C2CAD1;padding:2px 0 10px 12px;border-left:1px solid var(--seam);margin:0 0 6px 4px}
+.fwhy .src{display:block;color:var(--mist);font-size:12px;margin-top:4px}
+.calc{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--mist);margin:2px 0 16px}
+.calc b{color:var(--ink);font:600 12.5px/1 var(--f-data)}
+.lv{list-style:none;margin:0 0 16px;padding:0;font-size:13px}
+.lv li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;padding:5px 0 5px 10px;border-left:2px solid var(--smoke)}
+.lv li.supply{border-color:var(--bear)}.lv li.demand{border-color:var(--bull)}
+.lv li.nowp{border-color:var(--aurum);color:var(--aurum);background:rgba(242,182,48,.06)}
+.lv .p{font:600 13px/1.35 var(--f-data);font-variant-numeric:tabular-nums}
+.lv .k{color:#C2CAD1;min-width:0}
+.lv .k em{font-style:normal;color:var(--mist)}
+.lv .d{font:500 12.5px/1.35 var(--f-data);color:var(--mist);font-variant-numeric:tabular-nums}
+.kv{margin:0 0 14px;display:grid;gap:10px}
+.kv dt{font-size:12px;color:var(--mist)}
+.kv dd{margin:2px 0 0;font-size:13.5px;color:#D3D9DE}
+.play{background:rgba(242,182,48,.045);border:1px solid rgba(242,182,48,.26);padding:11px 13px;font-size:13.5px;color:#DCE1E5}
+.play h4{font:600 12.5px/1 var(--f-display);color:var(--aurum);margin-bottom:7px;letter-spacing:.03em}
+.ask-it{margin-top:12px;background:none;border:0;color:var(--aurum);font:600 13px/1 var(--f-display);letter-spacing:.02em;cursor:pointer;padding:6px 0}
+.ask-it:hover{text-decoration:underline}
+
+/* ---------- lower deck ---------- */
+.deck{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:40px 30px;margin-top:40px}
+.sec{min-width:0;border-top:1px solid var(--seam);padding-top:16px}
+.sec.wide{grid-column:1/-1}
+.lead{font-size:14px;color:#CDD3D9;margin:-2px 0 10px}
+.mvr{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1.3fr) 66px 34px 116px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #12161B}
+.mvn b{display:block;font:600 13px/1.2 var(--f-display);letter-spacing:.05em}
+.mvn span{display:block;color:var(--mist);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mvbar{position:relative;height:6px;background:#0E1116}
+.mvbar::before{content:"";position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--smoke)}
+.mvbar i{position:absolute;top:0;bottom:0}
+.mvbar i.p{left:50%;background:var(--bull)}.mvbar i.n{right:50%;background:var(--bear)}
+.mvp{font:600 13.5px/1 var(--f-data);text-align:right;font-variant-numeric:tabular-nums}
+.lean{width:30px;height:16px;display:block}
+.chip{justify-self:end;font:600 11.5px/1 var(--f-display);letter-spacing:.02em;padding:5px 7px;border:1px solid var(--seam);color:var(--mist);white-space:nowrap}
+.chip.vs{color:#000;background:var(--pulse);border-color:var(--pulse)}
+.chip.with{color:var(--ink);border-color:#2A313A}
+.mv-note{grid-column:1/-1;font-size:12.5px;color:#BAC2CA;margin-top:-2px}
+
+.cal-tools{display:flex;gap:8px;align-items:center}
+.tgl{background:none;border:1px solid var(--seam);color:var(--mist);padding:5px 9px;font-size:12.5px;cursor:pointer}
+.tgl[aria-pressed="true"]{border-color:var(--pulse);color:var(--ink)}
+.cal-day{font:600 13px/1 var(--f-display);color:var(--mist);margin:16px 0 4px;letter-spacing:.03em}
+.cal-day:first-child{margin-top:4px}
+.cr{display:grid;grid-template-columns:44px 30px minmax(0,1fr) 26px 58px 58px 58px;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid #12161B;font-size:13.5px}
+.cr.hd{border-bottom-color:var(--seam);padding:2px 0 6px;font-size:11.5px;color:var(--mist)}
+.cr.hd span:nth-child(n+5){text-align:right}
+.cr.past{opacity:.55}
+.cr.next{background:linear-gradient(90deg,rgba(118,169,255,.12),transparent 75%)}
+.cr .tm{font:500 13px/1 var(--f-data);font-variant-numeric:tabular-nums}
+.cty{font:600 10.5px/1 var(--f-data);border:1px solid var(--seam);padding:3px 0;text-align:center;color:var(--mist)}
+.cr .en{min-width:0}
+.cr .en small{display:block;color:var(--mist);font-size:12px;margin-top:2px}
+.imp{display:flex;gap:2px}
+.imp i{width:4px;height:12px;background:#1E242C}
+.imp i.on{background:var(--pulse)}
+.cv{font:500 13px/1.2 var(--f-data);font-variant-numeric:tabular-nums;text-align:right}
+.cv.act{font-weight:600;color:var(--ink)}
+.in-cd{color:var(--pulse);font-family:var(--f-data)}
+
+.nw{list-style:none;margin:0;padding:0}
+.nw li{padding:11px 0;border-bottom:1px solid #12161B;display:grid;grid-template-columns:52px minmax(0,1fr);gap:12px}
+.nw time{font:500 12.5px/1.4 var(--f-data);color:var(--mist);font-variant-numeric:tabular-nums}
+.nw .hl{font-weight:500;font-size:14.5px;line-height:1.35;text-decoration:none}
+.nw a.hl:hover{text-decoration:underline;text-decoration-color:var(--aurum)}
+.nw .why{font-size:13px;color:#BAC2CA;margin-top:4px}
+.nw .meta{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin-top:6px;font-size:12px;color:var(--mist)}
+.tag{font:600 11px/1 var(--f-data);padding:3px 5px;border:1px solid currentColor}
+
+.pulse-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 26px}
+.pb h3{font:600 14px/1.2 var(--f-display);margin-bottom:8px}
+.pb .big{font:700 30px/1 var(--f-display);font-variant-numeric:tabular-nums}
+.pb .sub{font-size:12.5px;color:var(--mist);margin-top:6px}
+.fedbar{display:flex;height:24px;margin:10px 0 6px;border:1px solid var(--seam);background:#0B0E12}
+.fedbar span{display:flex;align-items:center;justify-content:center;font:600 11.5px/1 var(--f-data);color:#000;min-width:0;overflow:hidden;white-space:nowrap}
+.fedbar .hk{background:var(--bear)}.fedbar .hd{background:#5B6570;color:var(--ink)}.fedbar .ct{background:var(--bull)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--mist)}
+.legend i{display:inline-block;width:8px;height:8px;margin-right:5px;vertical-align:0}
+.fg{position:relative;height:8px;margin:14px 0 8px;background:linear-gradient(90deg,var(--bear),#6A4550 30%,#4A535D 50%,#3E6656 70%,var(--bull))}
+.fg b{position:absolute;top:-6px;width:3px;height:20px;margin-left:-1.5px;background:var(--ink);box-shadow:0 0 8px rgba(255,255,255,.6)}
+.fg-scale{display:flex;justify-content:space-between;font:400 10.5px/1 var(--f-data);color:var(--smoke)}
+.rt{display:grid;grid-template-columns:70px minmax(0,1fr) 44px;gap:10px;align-items:center;font-size:13px;margin-top:8px}
+.rt .bar{height:8px;background:var(--bear);position:relative}
+.rt .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--bull)}
+.chatter{font-size:14px;color:#CDD3D9;max-width:75ch}
+
+.rec{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:26px}
+.kpis{display:flex;flex-wrap:wrap;gap:22px 30px;margin-bottom:14px}
+.kpi b{display:block;font:700 30px/1 var(--f-display);font-variant-numeric:tabular-nums}
+.kpi span{display:block;font-size:12.5px;color:var(--mist);margin-top:5px}
+.strip{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px}
+.rc{width:24px;height:24px;display:grid;place-items:center;font:700 10.5px/1 var(--f-data);border:1px solid var(--seam);color:var(--mist)}
+.rc.hit{background:rgba(47,227,155,.15);border-color:rgba(47,227,155,.55);color:var(--bull)}
+.rc.miss{background:rgba(255,84,112,.13);border-color:rgba(255,84,112,.55);color:var(--bear)}
+.rlist{list-style:none;margin:0;padding:0;font-size:13px}
+.rlist li{display:grid;grid-template-columns:96px minmax(0,1fr) 64px 50px;gap:10px;padding:6px 0;border-bottom:1px solid #12161B;align-items:center}
+.rlist .r-ok{color:var(--bull);font-weight:600}.rlist .r-no{color:var(--bear);font-weight:600}.rlist .r-fl{color:var(--mist)}
+.method{font-size:13px;color:var(--mist);max-width:70ch}
+
+.foot{margin-top:44px;border-top:1px solid var(--seam);padding-top:18px;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:30px;font-size:12.5px;color:var(--mist)}
+.foot details{margin-bottom:10px}
+.foot summary{cursor:pointer;color:var(--ink);font-weight:500;font-size:13px}
+.foot summary::marker{color:var(--aurum)}
+.foot details p,.foot details li{margin-top:6px;line-height:1.5}
+.foot ul{margin:6px 0 0;padding-left:18px}
+.foot a{color:#C2CAD1}
+
+/* ---------- drawer ---------- */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:45;opacity:0;pointer-events:none;transition:opacity .2s}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);width:min(460px,100%);z-index:50;background:#05070A;border-left:1px solid var(--seam);display:flex;flex-direction:column;transform:translateX(103%);transition:transform .28s cubic-bezier(.2,.8,.2,1);box-shadow:-30px 0 70px rgba(0,0,0,.7)}
+.drawer.open{transform:none}
+.dr-h{padding:16px 18px 14px;border-bottom:1px solid var(--seam);display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.dr-h h2{font-size:19px}
+.dr-h p{font-size:12.5px;color:var(--mist);margin-top:4px}
+.x{flex:none;background:none;border:1px solid var(--seam);width:34px;height:34px;cursor:pointer;color:var(--mist);font-size:18px;line-height:1}
+.x:hover{color:var(--ink);border-color:var(--smoke)}
+.msgs{flex:1;overflow:auto;padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+.msg{max-width:94%;font-size:14px;line-height:1.52}
+.msg p+p,.msg ul+p,.msg p+ul{margin-top:8px}
+.msg ul{margin:6px 0 0;padding-left:18px}
+.msg li+li{margin-top:3px}
+.msg .mh{font-weight:600;color:var(--ink)}
+.msg.u{align-self:flex-end;background:#10141A;border:1px solid var(--seam);padding:8px 12px}
+.msg.a{align-self:flex-start;border-left:2px solid var(--aurum);padding:1px 0 1px 12px;color:#DCE1E5}
+.msg.a.wait{color:var(--mist)}
+.msg.s{align-self:stretch;color:var(--mist);font-size:13px;border:1px dashed var(--seam);padding:10px 12px}
+.sugg{display:flex;flex-wrap:wrap;gap:6px;padding:0 18px 12px}
+.sugg button{background:none;border:1px solid var(--seam);padding:7px 10px;font-size:12.5px;cursor:pointer;color:#C9D0D6;text-align:left}
+.sugg button:hover{border-color:var(--aurum);color:var(--ink)}
+.composer{border-top:1px solid var(--seam);padding:12px 18px 16px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
+.composer textarea{resize:none;background:#0A0D11;border:1px solid var(--seam);color:var(--ink);padding:10px 11px;font:400 14px/1.4 var(--f-body);min-height:46px;max-height:150px;width:100%}
+.composer textarea:focus{border-color:var(--aurum);outline:none}
+.c-actions{display:flex;flex-direction:column;gap:6px}
+.dr-foot{padding:0 18px 14px;font-size:11.5px;color:var(--smoke)}
+.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,16px);opacity:0;z-index:60;background:#0C0F13;border:1px solid var(--aurum);color:var(--ink);padding:10px 14px;font-size:13.5px;pointer-events:none;transition:opacity .3s,transform .3s}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+
+.ask-out{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:0 18px 12px}
+.ask-out a{text-decoration:none}
+.ok{color:var(--bull);font-size:13px}
+.msgs textarea.fallback{width:100%;min-height:120px;background:#0A0D11;color:var(--ink);border:1px solid var(--seam);padding:8px;font:12px/1.4 var(--f-data)}
+
+/* ---------- responsive ---------- */
+@media (max-width:1180px){
+  .meters{grid-template-columns:minmax(0,1fr)}
+  .m-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 28px}
+}
+@media (max-width:1020px){
+  .hero{grid-template-columns:minmax(0,1fr)}
+  .deck{grid-template-columns:minmax(0,1fr)}
+  .rec{grid-template-columns:minmax(0,1fr)}
+  .rail-in{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"brand fresh ask" "day day day";gap:10px 16px}
+  .fresh{justify-self:end}
+}
+@media (max-width:760px){
+  .m-grid{grid-template-columns:minmax(0,1fr)}
+  .drivers{grid-template-columns:minmax(0,1fr);gap:10px}
+  .pulse-grid{grid-template-columns:minmax(0,1fr)}
+  .mvr{grid-template-columns:minmax(0,1fr) 62px 30px auto}
+  .mvr .mvbar{display:none}
+  .cr{grid-template-columns:40px 28px minmax(0,1fr) 54px 54px;row-gap:4px}
+  .cr .imp{display:none}
+  .cr .cv.prev{display:none}
+  .cr.hd span:nth-child(4),.cr.hd span:nth-child(5){display:none}
+  .foot{grid-template-columns:minmax(0,1fr)}
+  .rlist li{grid-template-columns:78px minmax(0,1fr) 56px 42px}
+}
+@media (max-width:520px){
+  .rail{position:relative}
+  .rail-in{padding:10px 16px;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"brand ask" "fresh fresh" "day day";gap:10px 12px}
+  .fresh{justify-self:start;white-space:normal}
+  .btn.fab{display:inline-flex}
+  main{padding:18px 16px 48px}
+  .brand small{display:none}
+  .fresh .fx{display:none}
+  .ask-btn kbd{display:none}
+  .gauge{grid-template-columns:116px minmax(0,1fr);gap:12px}
+  .gauge svg{width:116px;height:116px}
+  .score{font-size:42px}
+  .cd{font-size:30px}
+  .meter{padding:14px 14px 16px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition:none!important;animation:none!important}
+}
+</style>
+</head>
+<body>
+<header class="rail">
+  <div class="rail-in">
+    <div class="brand">
+      <svg viewBox="0 0 30 30" aria-hidden="true"><circle cx="15" cy="15" r="13" fill="none" stroke="#F2B630" stroke-width="1.6"/><path d="M4.5 18.6 L25.5 11.4" stroke="#F2B630" stroke-width="2.2" stroke-linecap="round"/><circle cx="15" cy="15" r="2" fill="#E8ECEF"/></svg>
+      <div><b>KAIROS</b><small>Macro bias desk</small></div>
+    </div>
+    <div class="day" id="day" aria-label="Handelsdag en sessies"></div>
+    <div class="fresh" id="fresh" role="status" aria-live="polite"><span class="dot"></span><span>Verbinden met de desk…</span></div>
+    <button class="btn ask-btn" id="openAsk" type="button" aria-controls="ask" aria-expanded="false">Vraag de desk <kbd>/</kbd></button>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" id="hero" aria-label="Desk-read van vandaag"></section>
+
+  <section aria-labelledby="mb-h">
+    <div class="sec-h"><h2 id="mb-h">Marktbias</h2><p>Richting en zekerheid per markt, met de redenering erachter. Klik op een factor voor het waarom.</p></div>
+    <div class="meters" id="meters"></div>
+  </section>
+
+  <div class="deck">
+    <section class="sec" id="against" aria-labelledby="ag-h">
+      <div class="sec-h"><h2 id="ag-h">Tegen de desk</h2><p>Grootste bewegers vandaag en wie tegen de call in loopt</p></div>
+      <div id="against-list"></div>
+    </section>
+    <section class="sec" id="calendar" aria-labelledby="ca-h">
+      <div class="sec-h"><h2 id="ca-h">Kalender</h2><div class="cal-tools"><button class="tgl" id="calHigh" type="button" aria-pressed="false">Alleen hoge impact</button></div></div>
+      <div id="cal-list"></div>
+    </section>
+    <section class="sec" id="news" aria-labelledby="nw-h">
+      <div class="sec-h"><h2 id="nw-h">Waar de markt op reageert</h2><p>Nieuws dat de desk meeweegt</p></div>
+      <div id="news-list"></div>
+    </section>
+    <section class="sec" id="pulse" aria-labelledby="pu-h">
+      <div class="sec-h"><h2 id="pu-h">Fed, sentiment en chatter</h2><p>Renteverwachting, angst en hebzucht, positionering</p></div>
+      <div id="pulse-body"></div>
+    </section>
+    <section class="sec wide" id="record" aria-labelledby="rc-h">
+      <div class="sec-h"><h2 id="rc-h">Trackrecord</h2><p>Hoe de calls van de desk uitpakten, van de call tot de slot-run</p></div>
+      <div id="record-body"></div>
+    </section>
+  </div>
+
+  <footer class="foot" id="foot"></footer>
+</main>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="ask" aria-labelledby="ask-h" aria-hidden="true">
+  <div class="dr-h">
+    <div><h2 id="ask-h">Vraag de desk</h2><p id="askCtx">Antwoorden op basis van de laatste desk-run</p></div>
+    <button class="x" id="closeAsk" type="button" aria-label="Sluiten">×</button>
+  </div>
+  <div class="msgs" id="msgs" aria-live="polite"></div>
+  <div class="sugg" id="sugg"></div>
+  <form class="composer" id="askForm" autocomplete="off">
+    <label class="sr" for="askInput">Je vraag aan de desk</label>
+    <textarea id="askInput" rows="2" placeholder="Bijv. waarom is goud bearish als het vandaag stijgt?"></textarea>
+    <div class="c-actions">
+      <button class="btn solid" id="askSend" type="submit">Kopieer voor Claude</button>
+    </div>
+  </form>
+  <div class="ask-out" id="askOut" hidden><span class="ok" id="askOk">Gekopieerd.</span><a class="btn solid" id="openClaude" href="https://claude.ai/new" target="_blank" rel="noopener">Open Claude</a></div>
+  <p class="dr-foot">Werkt met elk Claude-account, ook gratis: plak de gekopieerde tekst in een nieuwe chat. Geen financieel advies.</p>
+</aside>
+<button class="btn solid fab" id="fabAsk" type="button" aria-controls="ask">Vraag de desk</button>
+<div class="toast" id="toast" role="status"></div>
+<noscript><p class="state">Deze app heeft JavaScript nodig.</p></noscript>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------- constants ---------- */
+var TZ_DESK = "Europe/Brussels";
+var RUN_TIMES = [[7,46],[13,46],[22,46]];
+var REDUCED = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+var META = {
+  XAUUSD:{dp:2,s:"G",tag:"XAU"}, US500:{dp:1,s:"S",tag:"US500"}, US100:{dp:1,s:"N",tag:"US100"},
+  XAGUSD:{dp:2,tag:"XAG"}, US30:{dp:0,tag:"US30"}, DXY:{dp:2,tag:"DXY"}, US10Y:{dp:3,tag:"US10Y"},
+  VIX:{dp:2,tag:"VIX"}, WTI:{dp:2,tag:"WTI"}, BRENT:{dp:2,tag:"Brent"}, BTCUSD:{dp:0,tag:"BTC"},
+  EURUSD:{dp:4,tag:"EURUSD"}, USDJPY:{dp:2,tag:"USDJPY"}
+};
+var CTY = {US:"VS",USA:"VS",EU:"EU",EZ:"EU",EA:"EU",DE:"DE",UK:"VK",GB:"VK",CN:"CN",JP:"JP",CH:"CH",CA:"CA",AU:"AU",NZ:"NZ"};
+var SESS = [
+  {k:"asia",n:"Azië",tz:"Asia/Tokyo",a:[9,0],b:[18,0]},
+  {k:"lon",n:"Londen",tz:"Europe/London",a:[8,0],b:[16,30]},
+  {k:"ny",n:"New York",tz:"America/New_York",a:[8,0],b:[17,0]}
+];
+var KZ = [
+  {n:"London killzone",tz:"Europe/London",a:[7,0],b:[10,0]},
+  {n:"NY killzone",tz:"America/New_York",a:[7,0],b:[10,0]}
+];
+
+/* ---------- state ---------- */
+var D = null, RUNS = [], CONN = "init", CONN_ERR = "";
+var SHOWN = {}, CAL_HIGH = false, DIALS = {};
+try { CAL_HIGH = localStorage.getItem("kairos.calHigh") === "1"; } catch (e) {}
+
+/* ---------- helpers ---------- */
+function $(s, r){ return (r || document).querySelector(s); }
+function h(tag, attrs){
+  var el = document.createElement(tag);
+  if (attrs) for (var k in attrs){
+    var v = attrs[k];
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k === "text") el.textContent = v;
+    else if (k === "style" && typeof v === "object") { for (var sk in v) el.style[sk] = v[sk]; }
+    else if (k.slice(0,2) === "on" && typeof v === "function") el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? "" : String(v));
+  }
+  for (var i = 2; i < arguments.length; i++) add(el, arguments[i]);
+  return el;
+}
+function add(el, kid){
+  if (kid == null || kid === false) return;
+  if (Array.isArray(kid)) { kid.forEach(function(k){ add(el, k); }); return; }
+  el.append(kid instanceof Node ? kid : String(kid));
+}
+var SVGNS = "http://www.w3.org/2000/svg";
+function sv(tag, attrs){
+  var el = document.createElementNS(SVGNS, tag);
+  if (attrs) for (var k in attrs) if (attrs[k] != null) el.setAttribute(k, String(attrs[k]));
+  for (var i = 2; i < arguments.length; i++) if (arguments[i]) el.append(arguments[i]);
+  return el;
+}
+function num(v){
+  if (typeof v === "number") return isFinite(v) ? v : null;
+  if (typeof v === "string" && v.trim() !== "") { var n = +v.replace(",", "."); return isFinite(n) ? n : null; }
+  return null;
+}
+function clamp(v, a, b){ return Math.min(b, Math.max(a, v)); }
+function str(v){ return v == null ? "" : String(v); }
+function cap(s){ s = str(s); return s.charAt(0).toUpperCase() + s.slice(1); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function safeId(v){ return str(v).replace(/[^A-Za-z0-9_-]/g, "") || "x"; }
+function safeUrl(u){ try { var x = new URL(String(u)); return (x.protocol === "https:" || x.protocol === "http:") ? x.href : null; } catch (e) { return null; } }
+
+var NF = {};
+function nf(dp){ return NF[dp] || (NF[dp] = new Intl.NumberFormat("nl-NL", {minimumFractionDigits:dp, maximumFractionDigits:dp})); }
+function fmt(v, dp){ var n = num(v); return n == null ? "—" : nf(dp).format(n); }
+function fmtS(v, dp){ var n = num(v); if (n == null) return "—"; var r = +n.toFixed(dp); return (r > 0 ? "+" : r < 0 ? "−" : "") + nf(dp).format(Math.abs(r)); }
+function fmtPct(v, dp){ var n = num(v); return n == null ? "—" : fmtS(n, dp == null ? 2 : dp) + "%"; }
+function dirCls(v){ var n = num(v); return n == null || n === 0 ? "fl" : n > 0 ? "up" : "dn"; }
+function dpOf(id, a){ if (a && num(a.dp) != null) return num(a.dp); return META[id] && META[id].dp != null ? META[id].dp : 2; }
+function tagOf(id){ return META[id] && META[id].tag ? META[id].tag : str(id); }
+function txt(v){ return (v == null || v === "") ? "—" : String(v); }
+
+function tms(iso){ var t = Date.parse(iso); return isFinite(t) ? t : null; }
+var fTime = new Intl.DateTimeFormat("nl-NL", {hour:"2-digit", minute:"2-digit", hour12:false});
+var fDay = new Intl.DateTimeFormat("nl-NL", {weekday:"short", day:"numeric", month:"short"});
+var fLong = new Intl.DateTimeFormat("nl-NL", {weekday:"long", day:"numeric", month:"long"});
+function hm(t){ return t == null ? "—" : fTime.format(new Date(t)); }
+function dayStart(t){ var d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); }
+function dayLabel(t, now){
+  var diff = Math.round((dayStart(t) - dayStart(now)) / 86400000);
+  if (diff === 0) return "Vandaag"; if (diff === 1) return "Morgen"; if (diff === -1) return "Gisteren";
+  return cap(fDay.format(new Date(t)).replace(/\.$/, ""));
+}
+function rel(t, now){
+  var s = (now - t) / 1000;
+  if (s < 90) return "zojuist";
+  if (s < 3600) return Math.round(s / 60) + " min geleden";
+  if (s < 86400) return Math.round(s / 3600) + " u geleden";
+  return dayLabel(t, now).toLowerCase() + " " + hm(t);
+}
+function pad(n){ return (n < 10 ? "0" : "") + n; }
+function countdown(ms){
+  if (ms <= 0) return "nu";
+  var s = Math.floor(ms / 1000), d = Math.floor(s / 86400), hh = Math.floor(s % 86400 / 3600), mm = Math.floor(s % 3600 / 60), ss = s % 60;
+  return (d ? d + "d " : "") + (d || hh ? pad(hh) + ":" : "") + pad(mm) + ":" + pad(ss);
+}
+function inShort(ms){
+  var m = Math.round(ms / 60000);
+  if (m < 1) return "nu";
+  if (m < 60) return "over " + m + " min";
+  var hh = Math.floor(m / 60), mm = m % 60;
+  if (hh < 24) return "over " + hh + " u" + (mm ? " " + mm + " min" : "");
+  return "over " + Math.floor(hh / 24) + " d " + (hh % 24) + " u";
+}
+
+/* time zones */
+var DTF = {};
+function partsIn(t, tz){
+  var f = DTF[tz] || (DTF[tz] = new Intl.DateTimeFormat("en-US", {timeZone:tz, hourCycle:"h23", year:"numeric", month:"numeric", day:"numeric", hour:"numeric", minute:"numeric", second:"numeric", weekday:"short"}));
+  var o = {}; f.formatToParts(new Date(t)).forEach(function(p){ o[p.type] = p.value; });
+  return {y:+o.year, m:+o.month, d:+o.day, hh:(+o.hour) % 24, mm:+o.minute, ss:+o.second, wd:o.weekday};
+}
+var WD = {Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6};
+function zoned(y, m, d, hh, mm, tz){
+  var guess = Date.UTC(y, m - 1, d, hh, mm);
+  function off(t){ var p = partsIn(t, tz); return Date.UTC(p.y, p.m - 1, p.d, p.hh, p.mm, p.ss) - t; }
+  var t = guess - off(guess);
+  return guess - off(t);
+}
+function nextRunAfter(t){
+  for (var i = 0; i < 9; i++){
+    var p = partsIn(t + i * 86400000, TZ_DESK), wd = WD[p.wd];
+    if (wd === 0 || wd === 6) continue;
+    for (var j = 0; j < RUN_TIMES.length; j++){
+      var r = zoned(p.y, p.m, p.d, RUN_TIMES[j][0], RUN_TIMES[j][1], TZ_DESK);
+      if (r > t + 1000) return r;
+    }
+  }
+  return null;
+}
+function windowsFor(def, s, e){
+  var out = [];
+  for (var k = -1; k <= 1; k++){
+    var p = partsIn(s + 12 * 3600000 + k * 86400000, def.tz), wd = WD[p.wd];
+    if (wd === 0 || wd === 6) continue;
+    var a = zoned(p.y, p.m, p.d, def.a[0], def.a[1], def.tz), b = zoned(p.y, p.m, p.d, def.b[0], def.b[1], def.tz);
+    var A = Math.max(a, s), B = Math.min(b, e);
+    if (B > A) out.push([A, B, a, b]);
+  }
+  return out;
+}
+
+/* ---------- desk maths (same formula the desk-run uses) ---------- */
+function evalFactors(factors, ep){
+  var sw = 0, sdw = 0, sabs = 0, fresh = 0, n = 0;
+  arr(factors).forEach(function(f){
+    var w = num(f && f.w), d = num(f && f.d);
+    if (w == null || d == null || w <= 0) return;
+    var dd = clamp(Math.round(d), -2, 2);
+    n++; sw += w; sdw += dd * w; sabs += Math.abs(dd) * w;
+    if (f.fresh !== false && f.fresh !== 0) fresh++;
+  });
+  var score = sw ? Math.round(100 * sdw / (2 * sw)) : 0;
+  var agree = sabs ? Math.abs(sdw) / sabs : 0;
+  var cov = n ? fresh / n : 0;
+  var pen = clamp(num(ep) || 0, 0, 30);
+  var conf = n ? clamp(Math.round(20 + 60 * agree * cov + 15 * Math.min(1, Math.abs(score) / 50) - pen), 10, 90) : 0;
+  return {score:score, agree:agree, cov:cov, pen:pen, conf:conf, n:n};
+}
+function evalAsset(a){
+  var r = evalFactors(a && a.factors, a && a.ep);
+  if (!r.n && num(a && a.score) != null){ r.score = clamp(Math.round(num(a.score)), -100, 100); r.conf = clamp(Math.round(num(a.conf) || 0), 0, 90); }
+  return r;
+}
+function evalCompact(c){
+  if (!c) return null;
+  var d = arr(c.d), w = arr(c.w), f = arr(c.f);
+  if (!d.length && num(c.score) != null) return {score:num(c.score), conf:num(c.conf) || 0, n:0};
+  return evalFactors(d.map(function(x, i){ return {d:x, w:w[i], fresh:f[i] !== 0 && f[i] !== false}; }), c.ep);
+}
+function bias(score){
+  if (score >= 40) return {k:"bull", t:"Bullish"};
+  if (score >= 15) return {k:"bull", t:"Licht bullish"};
+  if (score > -15) return {k:"flat", t:"Neutraal"};
+  if (score > -40) return {k:"bear", t:"Licht bearish"};
+  return {k:"bear", t:"Bearish"};
+}
+function scoreTxt(s){ return s > 0 ? "+" + s : s < 0 ? "−" + Math.abs(s) : "0"; }
+
+/* ---------- rail: day strip + freshness ---------- */
+function renderDay(){
+  var box = $("#day"); if (!box) return;
+  var now = Date.now(), s = dayStart(now), e = s + 86400000;
+  var track = h("div", {class:"track"});
+  var x = function(t){ return ((t - s) / (e - s) * 100).toFixed(3) + "%"; };
+  var active = [];
+  SESS.forEach(function(def){
+    windowsFor(def, s, e).forEach(function(w){
+      track.append(h("div", {class:"seg " + def.k, style:{left:x(w[0]), width:((w[1] - w[0]) / (e - s) * 100).toFixed(3) + "%"}, title:def.n + " " + hm(w[2]) + "–" + hm(w[3])}, h("span", {class:"lbl"}, def.n)));
+      if (now >= w[0] && now < w[1]) active.push(def.n);
+    });
+  });
+  KZ.forEach(function(def){
+    windowsFor(def, s, e).forEach(function(w){
+      track.append(h("div", {class:"kz", style:{left:x(w[0]), width:((w[1] - w[0]) / (e - s) * 100).toFixed(3) + "%"}, title:def.n + " " + hm(w[2]) + "–" + hm(w[3])}));
+    });
+  });
+  arr(D && D.calendar).forEach(function(ev){
+    var t = tms(ev.t), im = num(ev.imp) || 1;
+    if (t == null || t < s || t >= e || im < 2) return;
+    track.append(h("div", {class:"evt" + (im >= 3 ? " hi" : ""), style:{left:x(t)}, title:hm(t) + " " + str(ev.ev)}));
+  });
+  track.append(h("div", {class:"nowc", id:"nowc", style:{left:x(now)}}));
+  var hours = h("div", {class:"hours", "aria-hidden":"true"});
+  [0, 3, 6, 9, 12, 15, 18, 21, 24].forEach(function(hh){ hours.append(h("span", {style:{left:(hh / 24 * 100) + "%"}}, pad(hh % 24 === 0 && hh ? 24 : hh))); });
+  var wd = new Date(now).getDay();
+  var label = active.length ? active.join(" + ") : (wd === 0 || wd === 6 ? "Weekend, markten dicht" : "Tussen de sessies");
+  box.replaceChildren(
+    h("div", {class:"day-top"}, h("span", null, "Sessie: ", h("b", null, label)), h("span", {class:"clock", id:"clock"}, hm(now) + " jouw tijd")),
+    track, hours
+  );
+}
+function tickDay(){
+  var now = Date.now(), s = dayStart(now), c = $("#nowc"), k = $("#clock");
+  if (c) c.style.left = ((now - s) / 86400000 * 100).toFixed(3) + "%";
+  if (k) k.textContent = hm(now) + " jouw tijd";
+}
+function renderFresh(){
+  var el = $("#fresh"); if (!el) return;
+  var now = Date.now(), dot = "dot", l1 = "", l2 = "";
+  if (!D){
+    if (CONN === "error"){ dot += " err"; l1 = "Geen verbinding met de desk"; l2 = "Controleer je internet"; }
+    else if (CONN === "empty"){ dot += " warn"; l1 = "Nog geen desk-run"; l2 = "De eerste run komt eraan"; }
+    else { l1 = "Desk laden…"; }
+  } else {
+    var t = tms(D.asof), due = t != null ? nextRunAfter(t) : null, nx = nextRunAfter(now);
+    var late = due != null && now > due + 75 * 60000;
+    var old = t != null && now - t > 30 * 3600000 && new Date(now).getDay() % 6 !== 0;
+    dot += (CONN === "stale" || late || old) ? " warn" : " live";
+    l1 = "Desk-run " + (t != null ? hm(t) : "—") + (t != null ? ", " + rel(t, now) : "");
+    l2 = CONN === "stale" ? "Offline: laatst bekende desk" : late ? "Run van " + hm(due) + " nog niet binnen" : (nx ? "Volgende rond " + (dayStart(nx) === dayStart(now) ? hm(nx) : dayLabel(nx, now).toLowerCase() + " " + hm(nx)) : "");
+  }
+  el.replaceChildren(h("span", {class:dot}), h("span", null, h("b", null, l1), l2 ? h("span", {class:"fx"}, h("br"), h("span", {class:"mist"}, l2)) : null));
+}
+
+/* ---------- hero ---------- */
+function sessionPhrase(s){
+  return s === "london" ? "voor de Londen-sessie" : s === "ny" ? "voor de New York-sessie" : s === "close" ? "na de slot van Wall Street" : "desk-read";
+}
+function renderHero(){
+  var el = $("#hero"); el.replaceChildren();
+  if (!D){ el.append(stateBox()); return; }
+  var t = tms(D.asof), rg = D.regime || {};
+  var tone = num(rg.tone);
+  el.append(
+    h("div", {class:"read"},
+      h("p", {class:"when"}, t != null ? cap(fLong.format(new Date(t))) + ", " + sessionPhrase(D.session) : ""),
+      h("h1", {id:"headline"}, txt(D.headline)),
+      rg.label ? h("div", {class:"regime" + (tone > 0 ? " t-up" : tone < 0 ? " t-dn" : "")}, h("i"), h("span", null, "Regime"), h("b", null, str(rg.label))) : null,
+      rg.text ? h("p", {class:"rg-text"}, str(rg.text)) : null,
+      arr(D.summary).length ? h("ul", {class:"drivers", "aria-label":"Waar de markt op reageert"}, arr(D.summary).slice(0, 3).map(function(x){ return h("li", null, str(x)); })) : null
+    ),
+    catalyst()
+  );
+}
+function calEvents(){
+  return arr(D && D.calendar).map(function(e){ return {e:e, t:tms(e.t), i:clamp(num(e.imp) || 1, 1, 3)}; }).filter(function(x){ return x.t != null; }).sort(function(a, b){ return a.t - b.t; });
+}
+function nextCatalyst(now){
+  var ev = calEvents().filter(function(x){ return x.t > now - 60000; });
+  return ev.filter(function(x){ return x.i >= 3; })[0] || ev.filter(function(x){ return x.i >= 2; })[0] || null;
+}
+function hitsRow(hits){
+  hits = arr(hits); if (!hits.length) return null;
+  return h("div", {class:"hits"}, hits.map(function(id){ return h("span", {class:"hit"}, tagOf(str(id))); }));
+}
+function catalyst(){
+  var box = h("aside", {class:"cat", "aria-label":"Eerstvolgende catalyst"});
+  var now = Date.now(), x = nextCatalyst(now);
+  box.append(h("h2", null, "Eerstvolgende catalyst"));
+  if (!x){ box.append(h("p", {class:"ev"}, "Geen grote data gepland"), h("p", {class:"t"}, "Volgens de kalender van de laatste desk-run.")); return box; }
+  var e = x.e;
+  box.append(
+    h("p", {class:"ev"}, str(e.ev) + (e.per ? " (" + str(e.per) + ")" : "")),
+    h("p", {class:"t"}, (CTY[str(e.cty).toUpperCase()] || str(e.cty)) + ", " + dayLabel(x.t, now).toLowerCase() + " om " + hm(x.t)),
+    h("div", {class:"cd", "data-cd":String(x.t)}, countdown(x.t - now)),
+    h("dl", {class:"vals3"},
+      h("div", null, h("dt", null, "Vorige"), h("dd", null, txt(e.prev))),
+      h("div", null, h("dt", null, "Verwacht"), h("dd", null, txt(e.cons))),
+      h("div", null, h("dt", null, "Actueel"), h("dd", null, txt(e.act)))
+    ),
+    e.note ? h("p", {class:"cat-note"}, str(e.note)) : null,
+    hitsRow(e.hits)
+  );
+  return box;
+}
+function stateBox(){
+  var t, b;
+  if (CONN === "error"){ t = "De desk is niet bereikbaar"; b = "Controleer je internetverbinding. Zodra je weer online bent, laadt de desk vanzelf."; }
+  else if (CONN === "empty"){ var nx = nextRunAfter(Date.now()); t = "De eerste desk-run komt eraan"; b = "Zodra de geplande run op GitHub klaar is, verschijnt alles hier vanzelf." + (nx ? " Volgende run rond " + dayLabel(nx, Date.now()).toLowerCase() + " " + hm(nx) + "." : ""); }
+  else { t = "Desk laden…"; b = "Even geduld, de laatste desk-run wordt geladen."; }
+  return h("div", {class:"state"}, h("b", null, t), b);
+}
+
+/* ---------- lean meters ---------- */
+function dial(id, startScore, conf, label){
+  var R = 50, CX = 70, CY = 70, RC = 63, C = 2 * Math.PI * RC;
+  var svg = sv("svg", {viewBox:"0 0 140 140", role:"img", "aria-label":label});
+  var defs = sv("defs", null,
+    sv("clipPath", {id:"cl-" + id}, sv("circle", {cx:CX, cy:CY, r:R})),
+    sv("linearGradient", {id:"gr-" + id, x1:0, y1:0, x2:0, y2:1}, sv("stop", {offset:0, "stop-color":"currentColor", "stop-opacity":0.4}), sv("stop", {offset:1, "stop-color":"currentColor", "stop-opacity":0.02})),
+    sv("filter", {id:"gl-" + id, x:"-20%", y:"-20%", width:"140%", height:"140%"}, sv("feGaussianBlur", {stdDeviation:2.2, result:"b"}), sv("feMerge", null, sv("feMergeNode", {in:"b"}), sv("feMergeNode", {in:"SourceGraphic"})))
+  );
+  svg.append(defs);
+  svg.append(sv("circle", {cx:CX, cy:CY, r:R, fill:"#05070A", stroke:"#1A1F26"}));
+  [-40, -16, -6, 0, 6, 16, 40].forEach(function(a){
+    [0, 180].forEach(function(base){
+      var r = (a + base) * Math.PI / 180, big = a === 0 || Math.abs(a) === 16;
+      var r1 = R - 1, r2 = R - (big ? 8 : 5);
+      svg.append(sv("line", {x1:(CX + r1 * Math.cos(r)).toFixed(2), y1:(CY + r1 * Math.sin(r)).toFixed(2), x2:(CX + r2 * Math.cos(r)).toFixed(2), y2:(CY + r2 * Math.sin(r)).toFixed(2), stroke:big ? "#5A646E" : "#323A43", "stroke-width":big ? 1.4 : 1}));
+    });
+  });
+  var hz = sv("g", {transform:"rotate(" + (-startScore * 0.4).toFixed(2) + " " + CX + " " + CY + ")"},
+    sv("rect", {x:0, y:CY, width:140, height:80, fill:"url(#gr-" + id + ")"}),
+    sv("line", {x1:CX - R - 4, y1:CY, x2:CX + R + 4, y2:CY, stroke:"currentColor", "stroke-width":3.2, "stroke-linecap":"round", filter:"url(#gl-" + id + ")"})
+  );
+  svg.append(sv("g", {"clip-path":"url(#cl-" + id + ")"}, hz));
+  svg.append(sv("path", {d:"M" + (CX - R - 10) + " " + CY + "h11 M" + (CX + R - 1) + " " + CY + "h11", stroke:"#8F99A4", "stroke-width":1.5}));
+  svg.append(sv("circle", {cx:CX, cy:CY, r:3.2, fill:"#F2B630"}));
+  svg.append(sv("circle", {cx:CX, cy:CY, r:RC, fill:"none", stroke:"#161A20", "stroke-width":4}));
+  svg.append(sv("circle", {cx:CX, cy:CY, r:RC, fill:"none", stroke:"currentColor", "stroke-width":4, "stroke-dasharray":C.toFixed(2), "stroke-dashoffset":(C * (1 - clamp(conf, 0, 100) / 100)).toFixed(2), transform:"rotate(-90 " + CX + " " + CY + ")"}));
+  return {svg:svg, hz:hz};
+}
+function swing(hz, from, to){
+  var a0 = -from * 0.4, a1 = -to * 0.4;
+  if (REDUCED || Math.abs(a0 - a1) < 0.05){ hz.setAttribute("transform", "rotate(" + a1.toFixed(2) + " 70 70)"); return; }
+  var t0 = null;
+  function step(t){
+    if (t0 == null) t0 = t;
+    var s = (t - t0) / 1000, k = Math.exp(-3.4 * s) * Math.cos(8.2 * s), a = a1 + (a0 - a1) * k;
+    hz.setAttribute("transform", "rotate(" + a.toFixed(2) + " 70 70)");
+    if (s < 1.9) requestAnimationFrame(step); else hz.setAttribute("transform", "rotate(" + a1.toFixed(2) + " 70 70)");
+  }
+  requestAnimationFrame(step);
+}
+function prevCall(id){
+  if (!D || !RUNS.length) return null;
+  var cur = tms(D.asof);
+  for (var i = 0; i < RUNS.length; i++){
+    var r = RUNS[i], t = tms(r.asof);
+    if (r.runId === D.runId || t == null || (cur != null && t >= cur)) continue;
+    var ev = evalCompact(r.calls && r.calls[id]);
+    if (ev) return {score:ev.score, t:t};
+  }
+  return null;
+}
+function deltaText(id, score){
+  var p = prevCall(id);
+  if (!p) return "Eerste call in de geschiedenis";
+  var d = score - p.score;
+  return "Was " + scoreTxt(p.score) + " (" + dayLabel(p.t, Date.now()).toLowerCase() + " " + hm(p.t) + ")" + (d ? ", " + (d > 0 ? "▲ " : "▼ ") + Math.abs(d) : ", ongewijzigd");
+}
+function renderDeltas(){
+  arr(D && D.assets).forEach(function(a){
+    var id = safeId(a.id), el = $("#dl-" + id);
+    if (el) el.textContent = deltaText(id, evalAsset(a).score);
+  });
+}
+function kindName(k){ k = str(k).toLowerCase(); return k === "supply" ? "Supply" : k === "demand" ? "Demand" : k === "pivot" ? "Pivot" : cap(k || "Level"); }
+function meterCard(a, animate){
+  var id = safeId(a.id), ev = evalAsset(a), b = bias(ev.score), dp = dpOf(id, a);
+  var px = num(a.px), pxT = tms(a.pxAt) || tms(D.asof);
+  var start = animate ? (SHOWN[id] != null ? SHOWN[id] : 0) : ev.score;
+  var dl = dial(id, start, ev.conf, str(a.name || id) + ": " + b.t + ", score " + scoreTxt(ev.score) + ", zekerheid " + ev.conf + " procent");
+  DIALS[id] = dl;
+  var bars = h("div", {class:"cbar", "aria-hidden":"true"});
+  for (var i = 1; i <= 10; i++) bars.append(h("i", {class:ev.conf >= i * 10 - 5 ? "on" : null}));
+
+  var left = h("div", null,
+    h("div", {class:"m-head"},
+      h("div", null, h("span", {class:"tk", id:"t-" + id}, str(a.id)), h("span", {class:"nm"}, str(a.name))),
+      h("div", {class:"pxb"},
+        h("div", {class:"pv"}, fmt(px, dp)),
+        h("div", {class:"ch " + dirCls(a.chgPct)}, (num(a.chg) != null ? fmtS(a.chg, dp) + "  " : "") + fmtPct(a.chgPct)),
+        h("span", {class:"at"}, "koers om " + hm(pxT) + (a.pxSrc ? ", " + str(a.pxSrc) : ""))
+      )
+    ),
+    h("div", {class:"gauge"}, dl.svg,
+      h("div", null,
+        h("span", {class:"bias"}, b.t),
+        h("div", {class:"score"}, scoreTxt(ev.score), h("small", null, "van ±100")),
+        h("div", {class:"conf"}, "Zekerheid ", h("b", null, ev.conf + "%")),
+        bars,
+        h("div", {class:"delta", id:"dl-" + id}, deltaText(id, ev.score))
+      )
+    ),
+    a.call ? h("p", {class:"call"}, str(a.call)) : null,
+    a.thesis ? h("p", {class:"thesis"}, str(a.thesis)) : null,
+    (a.flip || a.risk) ? h("dl", {class:"kv"},
+      a.flip ? h("div", null, h("dt", null, "Bias draait als"), h("dd", null, str(a.flip))) : null,
+      a.risk ? h("div", null, h("dt", null, "Risico vandaag"), h("dd", null, str(a.risk))) : null
+    ) : null
+  );
+
+  var right = h("div", null,
+    h("p", {class:"blk-h"}, h("span", null, "Waarom deze bias"), h("span", null, "bijdrage")),
+    factorList(a, id),
+    h("p", {class:"calc"},
+      h("span", null, "Eensgezindheid ", h("b", null, Math.round(ev.agree * 100) + "%")),
+      h("span", null, "Data-dekking ", h("b", null, Math.round(ev.cov * 100) + "%")),
+      h("span", null, "Event-risico ", h("b", null, ev.pen ? "−" + ev.pen : "0")),
+      a.epWhy ? h("span", null, str(a.epWhy)) : null
+    ),
+    levelsList(a, id, dp, px),
+    a.playbook ? h("div", {class:"play"}, h("h4", null, "Supply & demand-plan"), h("p", null, str(a.playbook))) : null,
+    h("button", {class:"ask-it", type:"button", onclick:function(){ openAsk("Leg de call op " + str(a.name || a.id) + " uit: waarom " + b.t.toLowerCase() + ", wat kan hem omdraaien en hoe pas ik dat toe in mijn S&D-zones?"); }}, "Vraag de desk waarom")
+  );
+
+  var card = h("article", {class:"meter " + b.k, id:"m-" + id, "aria-labelledby":"t-" + id}, h("div", {class:"m-grid"}, left, right));
+  if (animate) requestAnimationFrame(function(){ swing(dl.hz, start, ev.score); });
+  SHOWN[id] = ev.score;
+  return card;
+}
+function factorList(a, id){
+  var F = arr(a.factors).filter(function(f){ return f && num(f.w) != null && num(f.d) != null; });
+  var maxW = Math.max.apply(null, [1].concat(F.map(function(f){ return num(f.w); })));
+  var ul = h("ul", {class:"fl-list"});
+  F.forEach(function(f, i){
+    var d = clamp(Math.round(num(f.d)), -2, 2), w = num(f.w), c = d * w, pct = Math.abs(c) / (2 * maxW) * 50;
+    var wid = "fw-" + id + "-" + i;
+    var why = h("div", {class:"fwhy", id:wid, hidden:true},
+      f.text ? str(f.text) : "Geen toelichting.",
+      h("span", {class:"src"}, "Richting " + scoreTxt(d) + " van ±2, gewicht " + w + (f.src ? ". Bron: " + str(f.src) : "")),
+      f.fresh === false ? h("span", {class:"src"}, "Geen verse data in deze run: oordeel uit de vorige run.") : null
+    );
+    var btn = h("button", {class:"frow", type:"button", "aria-expanded":"false", "aria-controls":wid},
+      h("span", {class:"lb" + (f.fresh === false ? " stale" : "")}, str(f.label || f.k)),
+      h("span", {class:"fbar", "aria-hidden":"true"}, h("i", {class:c >= 0 ? "p" : "n", style:{width:pct.toFixed(1) + "%"}})),
+      h("span", {class:"fv " + (c > 0 ? "up" : c < 0 ? "dn" : "fl")}, c === 0 ? "0" : scoreTxt(c))
+    );
+    btn.addEventListener("click", function(){ var open = btn.getAttribute("aria-expanded") === "true"; btn.setAttribute("aria-expanded", String(!open)); why.hidden = open; });
+    ul.append(h("li", null, btn, why));
+  });
+  if (!F.length) ul.append(h("li", {class:"mist"}, "Geen factoren in deze run."));
+  return ul;
+}
+function levelsList(a, id, dp, px){
+  var L = arr(a.levels).map(function(l){
+    var lo = num(l.lo != null ? l.lo : l.p), hi = num(l.hi != null ? l.hi : l.p);
+    if (lo == null && hi != null) lo = hi; if (hi == null) hi = lo;
+    return {lo:Math.min(lo, hi), hi:Math.max(lo, hi), kind:l.kind, note:l.note, src:l.src};
+  }).filter(function(l){ return l.lo != null && isFinite(l.lo); });
+  if (!L.length) return null;
+  L.sort(function(x, y){ return (y.lo + y.hi) - (x.lo + x.hi); });
+  var ul = h("ul", {class:"lv", "aria-label":"Levels die de desk in de gaten houdt"}), placed = false;
+  function nowRow(){ return h("li", {class:"nowp"}, h("span", {class:"p"}, fmt(px, dp)), h("span", {class:"k"}, "Koers nu (snapshot)"), h("span", {class:"d"}, "")); }
+  L.forEach(function(l){
+    var mid = (l.lo + l.hi) / 2;
+    if (!placed && px != null && mid < px){ ul.append(nowRow()); placed = true; }
+    var dist = px ? (mid - px) / px * 100 : null;
+    ul.append(h("li", {class:str(l.kind).toLowerCase(), title:l.src ? "Bron: " + str(l.src) : null},
+      h("span", {class:"p"}, l.hi > l.lo ? fmt(l.lo, dp) + "–" + fmt(l.hi, dp) : fmt(l.lo, dp)),
+      h("span", {class:"k"}, kindName(l.kind), l.note ? h("em", null, ", " + str(l.note)) : null),
+      h("span", {class:"d"}, dist == null ? "" : fmtPct(dist, 1))
+    ));
+  });
+  if (!placed && px != null) ul.append(nowRow());
+  return h("div", null, h("p", {class:"blk-h"}, h("span", null, "Levels en zones"), h("span", null, "afstand")), ul);
+}
+function renderMeters(animate){
+  var wrap = $("#meters"); wrap.replaceChildren();
+  var list = arr(D && D.assets);
+  if (!list.length){ wrap.append(stateBox()); return; }
+  list.forEach(function(a){ wrap.append(meterCard(a, animate)); });
+}
+
+/* ---------- against the desk ---------- */
+function leanGlyph(score){
+  var a = -clamp(score, -100, 100) * 0.4 * Math.PI / 180, L = 12, cx = 15, cy = 8;
+  var col = score >= 15 ? "#2FE39B" : score <= -15 ? "#FF5470" : "#A3ADB8";
+  return sv("svg", {class:"lean", viewBox:"0 0 30 16", "aria-hidden":"true"},
+    sv("line", {x1:3, y1:8, x2:27, y2:8, stroke:"#232A32", "stroke-width":1}),
+    sv("line", {x1:(cx - L * Math.cos(a)).toFixed(2), y1:(cy - L * Math.sin(a)).toFixed(2), x2:(cx + L * Math.cos(a)).toFixed(2), y2:(cy + L * Math.sin(a)).toFixed(2), stroke:col, "stroke-width":2.2, "stroke-linecap":"round"})
+  );
+}
+function renderAgainst(){
+  var box = $("#against-list"); box.replaceChildren();
+  if (!D){ box.append(stateBox()); return; }
+  var rows = [];
+  arr(D.assets).forEach(function(a){ rows.push({id:str(a.id), name:str(a.name), chg:num(a.chgPct), lean:evalAsset(a).score, note:a.moveNote}); });
+  arr(D.context).forEach(function(c){ var l = num(c.lean); rows.push({id:str(c.id), name:str(c.name), chg:num(c.chgPct), lean:l == null ? null : clamp(l, -2, 2) * 25, note:c.note}); });
+  rows = rows.filter(function(r){ return r.chg != null; }).sort(function(a, b){ return Math.abs(b.chg) - Math.abs(a.chg); });
+  if (!rows.length){ box.append(h("p", {class:"mist"}, "Geen koersbewegingen in deze run.")); return; }
+  var maxAbs = Math.max.apply(null, [0.5].concat(rows.map(function(r){ return Math.abs(r.chg); })));
+  var vs = 0;
+  var list = h("div", {role:"list"});
+  rows.forEach(function(r){
+    var st = (r.lean == null || Math.abs(r.lean) < 15 || Math.abs(r.chg) < 0.25) ? "none" : (Math.sign(r.chg) === Math.sign(r.lean) ? "with" : "vs");
+    if (st === "vs") vs++;
+    var pct = Math.min(50, Math.abs(r.chg) / maxAbs * 50);
+    list.append(h("div", {class:"mvr", role:"listitem"},
+      h("div", {class:"mvn"}, h("b", null, r.id), h("span", null, r.name)),
+      h("div", {class:"mvbar", "aria-hidden":"true"}, h("i", {class:r.chg >= 0 ? "p" : "n", style:{width:pct.toFixed(1) + "%"}})),
+      h("div", {class:"mvp " + dirCls(r.chg)}, fmtPct(r.chg)),
+      r.lean == null ? h("span", {class:"mist", "aria-label":"Geen call"}, "–") : leanGlyph(r.lean),
+      h("span", {class:"chip " + st}, st === "vs" ? "Tegen de desk" : st === "with" ? "Met de desk" : "Geen conflict"),
+      (st === "vs" && r.note) ? h("p", {class:"mv-note"}, str(r.note)) : null
+    ));
+  });
+  box.append(
+    h("p", {class:"lead"}, vs ? vs + (vs === 1 ? " markt loopt" : " markten lopen") + " vandaag tegen de call van de desk in. Zie dat als waarschuwing: wacht op bevestiging in je zone voordat je met de desk meegaat." : "Geen enkele beweger loopt duidelijk tegen de desk in."),
+    list,
+    h("p", {class:"mist", style:{fontSize:"12px", marginTop:"8px"}}, "Tegen de desk: de koers beweegt minstens 0,25% tegen een bias van ±15 of meer in. Dagverandering volgens de laatste desk-run.")
+  );
+}
+
+/* ---------- calendar ---------- */
+function renderCalendar(){
+  var box = $("#cal-list"); box.replaceChildren();
+  var btn = $("#calHigh"); if (btn) btn.setAttribute("aria-pressed", String(CAL_HIGH));
+  if (!D){ box.append(stateBox()); return; }
+  var now = Date.now(), s0 = dayStart(now);
+  var ev = calEvents().filter(function(x){ return x.t >= s0 - 0 && x.t < s0 + 7 * 86400000 && (!CAL_HIGH || x.i >= 3); });
+  if (!ev.length){ box.append(h("p", {class:"mist"}, CAL_HIGH ? "Geen high-impact events in de komende dagen." : "Geen events in de kalender van deze run.")); return; }
+  var nextT = null; ev.some(function(x){ if (x.t > now - 60000 && x.i >= 2){ nextT = x.t; return true; } return false; });
+  box.append(h("div", {class:"cr hd", "aria-hidden":"true"}, h("span", null, "Tijd"), h("span", null, ""), h("span", null, "Event"), h("span", null, ""), h("span", null, "Vorige"), h("span", null, "Verwacht"), h("span", null, "Actueel")));
+  var lastDay = null;
+  ev.forEach(function(x){
+    var e = x.e, dk = dayStart(x.t);
+    if (dk !== lastDay){ box.append(h("p", {class:"cal-day"}, dayLabel(x.t, now) + (dayLabel(x.t, now).length < 9 ? ", " + fDay.format(new Date(x.t)).replace(/\.$/, "") : ""))); lastDay = dk; }
+    var past = x.t < now - 5 * 60000, soon = !past && x.t - now < 24 * 3600000;
+    var imp = h("span", {class:"imp", title:"Impact " + x.i + " van 3"}); for (var i = 1; i <= 3; i++) imp.append(h("i", {class:i <= x.i ? "on" : null}));
+    box.append(h("div", {class:"cr" + (past ? " past" : "") + (x.t === nextT ? " next" : "")},
+      h("span", {class:"tm"}, hm(x.t)),
+      h("span", {class:"cty"}, CTY[str(e.cty).toUpperCase()] || str(e.cty).slice(0, 3) || "—"),
+      h("span", {class:"en"}, str(e.ev) + (e.per ? " (" + str(e.per) + ")" : ""), (e.note || soon) ? h("small", null, soon ? h("span", {class:"in-cd", "data-in":String(x.t)}, inShort(x.t - now)) : null, soon && e.note ? ". " : "", e.note ? str(e.note) : "") : null),
+      imp,
+      h("span", {class:"cv prev"}, txt(e.prev)),
+      h("span", {class:"cv"}, txt(e.cons)),
+      h("span", {class:"cv act"}, txt(e.act))
+    ));
+  });
+}
+
+/* ---------- news ---------- */
+function renderNews(){
+  var box = $("#news-list"); box.replaceChildren();
+  if (!D){ box.append(stateBox()); return; }
+  var now = Date.now();
+  var items = arr(D.news).map(function(n){ return {n:n, t:tms(n.t)}; }).sort(function(a, b){ return (b.t || 0) - (a.t || 0); }).slice(0, 8);
+  if (!items.length){ box.append(h("p", {class:"mist"}, "Geen nieuws in deze run.")); return; }
+  var ul = h("ul", {class:"nw"});
+  items.forEach(function(x){
+    var n = x.n, url = safeUrl(n.url);
+    var tags = arr(n.tags).map(function(tg){
+      var id = str(tg && tg.id), d = num(tg && tg.d) || 0;
+      return h("span", {class:"tag " + (d > 0 ? "up" : d < 0 ? "dn" : "fl")}, tagOf(id) + (d > 0 ? " ▲" : d < 0 ? " ▼" : ""));
+    });
+    ul.append(h("li", null,
+      h("time", {datetime:str(n.t)}, x.t != null ? (dayStart(x.t) === dayStart(now) ? hm(x.t) : dayLabel(x.t, now).slice(0, 6)) : "—"),
+      h("div", null,
+        url ? h("a", {class:"hl", href:url, target:"_blank", rel:"noopener noreferrer"}, str(n.h)) : h("span", {class:"hl"}, str(n.h)),
+        n.why ? h("p", {class:"why"}, str(n.why)) : null,
+        h("div", {class:"meta"}, n.src ? h("span", null, str(n.src)) : null, tags)
+      )
+    ));
+  });
+  box.append(ul);
+}
+
+/* ---------- Fed & sentiment ---------- */
+function renderPulse(){
+  var box = $("#pulse-body"); box.replaceChildren();
+  if (!D){ box.append(stateBox()); return; }
+  var fed = D.fed || {}, se = D.sentiment || {}, grid = h("div", {class:"pulse-grid"});
+  var hk = num(fed.hike), hd = num(fed.hold), ct = num(fed.cut);
+  if (hk != null || hd != null || ct != null){
+    hk = hk || 0; hd = hd || 0; ct = ct || 0; var tot = hk + hd + ct || 1;
+    var mt = tms(fed.meeting ? str(fed.meeting) + (str(fed.meeting).length <= 10 ? "T19:00:00Z" : "") : null);
+    var bar = h("div", {class:"fedbar", role:"img", "aria-label":"Verhoging " + hk + "%, gelijk " + hd + "%, verlaging " + ct + "%"});
+    if (hk) bar.append(h("span", {class:"hk", style:{width:(hk / tot * 100) + "%"}}, hk >= 12 ? Math.round(hk) + "%" : ""));
+    if (hd) bar.append(h("span", {class:"hd", style:{width:(hd / tot * 100) + "%"}}, hd >= 12 ? Math.round(hd) + "%" : ""));
+    if (ct) bar.append(h("span", {class:"ct", style:{width:(ct / tot * 100) + "%"}}, ct >= 12 ? Math.round(ct) + "%" : ""));
+    grid.append(h("div", {class:"pb"},
+      h("h3", null, "Fed: volgende vergadering" + (mt != null ? " " + fDay.format(new Date(mt)).replace(/\.$/, "") : "")),
+      h("div", {class:"big"}, (hk >= hd && hk >= ct ? Math.round(hk) + "% kans op verhoging" : hd >= ct ? Math.round(hd) + "% kans op gelijk" : Math.round(ct) + "% kans op verlaging")),
+      bar,
+      h("div", {class:"legend"}, h("span", null, h("i", {style:{background:"var(--bear)"}}), "Verhoging"), h("span", null, h("i", {style:{background:"#5B6570"}}), "Gelijk"), h("span", null, h("i", {style:{background:"var(--bull)"}}), "Verlaging")),
+      h("p", {class:"sub"}, (fed.rate ? "Huidige rente " + str(fed.rate) + ". " : "") + (fed.src ? "Bron: " + str(fed.src) : "") + (fed.asof ? " (" + str(fed.asof) + ")" : ""))
+    ));
+  }
+  var fg = se.fg || {}, fv = num(fg.v);
+  if (fv != null){
+    grid.append(h("div", {class:"pb"},
+      h("h3", null, "Fear & Greed (aandelen)"),
+      h("div", {class:"big"}, Math.round(fv) + " ", h("span", {style:{fontSize:"16px", color:"var(--mist)", fontFamily:"var(--f-body)", fontWeight:"500"}}, str(fg.label))),
+      h("div", {class:"fg", role:"img", "aria-label":"Fear and Greed " + Math.round(fv) + " van 100"}, h("b", {style:{left:clamp(fv, 0, 100) + "%"}})),
+      h("div", {class:"fg-scale", "aria-hidden":"true"}, h("span", null, "0 extreme angst"), h("span", null, "50"), h("span", null, "100 extreme hebzucht")),
+      h("p", {class:"sub"}, (num(fg.prev) != null ? "Vorige " + Math.round(num(fg.prev)) + ". " : "") + (fg.src ? "Bron: " + str(fg.src) : ""))
+    ));
+  }
+  var retail = arr(se.retail).filter(function(r){ return num(r.long) != null; });
+  if (retail.length){
+    var rb = h("div", {class:"pb"}, h("h3", null, "Retail-positionering"));
+    retail.forEach(function(r){
+      var lg = clamp(num(r.long), 0, 100);
+      rb.append(h("div", {class:"rt"}, h("span", null, tagOf(str(r.id))), h("span", {class:"bar", role:"img", "aria-label":Math.round(lg) + "% long"}, h("i", {style:{width:lg + "%"}})), h("span", {class:"num"}, Math.round(lg) + "% L")));
+    });
+    rb.append(h("p", {class:"sub"}, "Groen is long, rood is short. Extreme retail-posities werken vaak contrair." + (retail[0].src ? " Bron: " + str(retail[0].src) : "")));
+    grid.append(rb);
+  }
+  if (se.chatter){
+    grid.append(h("div", {class:"pb"}, h("h3", null, "Chatter"), h("p", {class:"chatter"}, str(se.chatter)), se.chatterSrc ? h("p", {class:"sub"}, "Bron: " + str(se.chatterSrc)) : null));
+  }
+  if (!grid.children.length) grid.append(h("p", {class:"mist"}, "Geen Fed- of sentimentdata in deze run."));
+  box.append(grid);
+}
+
+/* ---------- track record (computed here from stored runs) ---------- */
+function brusselsDay(t){ var p = partsIn(t, TZ_DESK); return p.y + "-" + pad(p.m) + "-" + pad(p.d); }
+function scoredCalls(){
+  var byDay = {};
+  RUNS.forEach(function(r){ var t = tms(r.asof); if (t == null || !r.calls) return; var k = brusselsDay(t); (byDay[k] = byDay[k] || []).push({r:r, t:t}); });
+  var out = [];
+  Object.keys(byDay).sort().reverse().forEach(function(day){
+    var rs = byDay[day].sort(function(a, b){ return a.t - b.t; });
+    var close = rs.filter(function(x){ return x.r.session === "close"; }).pop();
+    if (!close) return;
+    ["ny", "london"].forEach(function(ses){
+      var c = rs.filter(function(x){ return x.r.session === ses; })[0];
+      if (!c) return;
+      Object.keys(c.r.calls).forEach(function(id){
+        var a = c.r.calls[id], z = close.r.calls[id], ev = evalCompact(a);
+        if (!ev || !z || num(a.px) == null || num(z.px) == null || !num(a.px)) return;
+        var mv = (num(z.px) - num(a.px)) / num(a.px) * 100;
+        var kind = Math.abs(ev.score) < 15 ? "neutral" : Math.abs(mv) < 0.10 ? "flat" : (Math.sign(mv) === Math.sign(ev.score) ? "hit" : "miss");
+        out.push({day:day, t:c.t, ses:ses, id:id, score:ev.score, conf:ev.conf, mv:mv, kind:kind});
+      });
+    });
+  });
+  return out;
+}
+function renderRecord(){
+  var box = $("#record-body"); box.replaceChildren();
+  var all = scoredCalls(), dir = all.filter(function(x){ return x.kind === "hit" || x.kind === "miss"; });
+  if (!dir.length){
+    box.append(h("div", {class:"rec"},
+      h("div", null, h("p", {class:"lead"}, "Het trackrecord begint na de eerste slot-run (werkdagen rond 22:46 Brusselse tijd). Elke call van de ochtend- en de NY-run wordt dan gescoord tegen de slotkoers."), h("p", {class:"method"}, method())),
+      h("div", null, all.length ? h("p", {class:"mist"}, all.length + " call(s) gemeten, maar geen enkele met duidelijke richting en beweging.") : h("p", {class:"mist"}, "Nog geen gemeten calls."))
+    ));
+    return;
+  }
+  function rate(list){ var hits = list.filter(function(x){ return x.kind === "hit"; }).length; return list.length ? {p:Math.round(hits / list.length * 100), n:list.length} : null; }
+  var kpis = h("div", {class:"kpis"});
+  function kpi(label, r){ kpis.append(h("div", {class:"kpi"}, h("b", null, r ? r.p + "%" : "—"), h("span", null, label + (r ? " (" + r.n + ")" : "")))); }
+  kpi("Raak, alle calls", rate(dir));
+  ["XAUUSD", "US500", "US100"].forEach(function(id){ var l = dir.filter(function(x){ return x.id === id; }); if (l.length) kpi(tagOf(id), rate(l)); });
+  var hiR = rate(dir.filter(function(x){ return x.conf >= 60; })), loR = rate(dir.filter(function(x){ return x.conf < 60; }));
+  var calib = (hiR || loR) ? h("p", {class:"method", style:{marginBottom:"10px", color:"#CDD3D9"}}, "Kalibratie: calls met zekerheid 60%+ waren " + (hiR ? hiR.p + "% raak (" + hiR.n + ")" : "nog niet gemeten") + ", calls daaronder " + (loR ? loR.p + "% (" + loR.n + ")" : "nog niet gemeten") + ".") : null;
+  var strip = h("div", {class:"strip", "aria-label":"Laatste calls, nieuwste eerst"});
+  dir.slice(0, 40).forEach(function(x){ strip.append(h("span", {class:"rc " + x.kind, title:x.day + " " + (x.ses === "ny" ? "NY" : "ochtend") + " " + tagOf(x.id) + ": " + scoreTxt(x.score) + ", " + fmtPct(x.mv, 2)}, (META[x.id] && META[x.id].s) || x.id.charAt(0))); });
+  var ul = h("ul", {class:"rlist"});
+  all.slice(0, 9).forEach(function(x){
+    var res = x.kind === "hit" ? h("span", {class:"r-ok"}, "Raak") : x.kind === "miss" ? h("span", {class:"r-no"}, "Mis") : h("span", {class:"r-fl"}, x.kind === "flat" ? "Vlak" : "Neutraal");
+    ul.append(h("li", null, h("span", {class:"mist"}, cap(fDay.format(new Date(x.t)).replace(/\.$/, "")) + (x.ses === "ny" ? " NY" : " ocht.")), h("span", null, tagOf(x.id) + ", " + bias(x.score).t.toLowerCase() + " (" + scoreTxt(x.score) + ")"), h("span", {class:"num " + dirCls(x.mv)}, fmtPct(x.mv, 2)), res));
+  });
+  box.append(h("div", {class:"rec"}, h("div", null, kpis, calib, strip, h("p", {class:"method"}, method())), h("div", null, h("p", {class:"blk-h"}, h("span", null, "Laatste metingen"), h("span", null, "beweging tot slot")), ul)));
+}
+function method(){ return "Een call is raak als de koers tussen de call en de slot-run minstens 0,10% in de richting van de bias bewoog. Neutrale calls (score tussen −15 en +15) en bewegingen kleiner dan 0,10% tellen niet mee."; }
+
+/* ---------- footer ---------- */
+function renderFoot(){
+  var el = $("#foot"); el.replaceChildren();
+  var src = arr(D && D.sources).filter(function(s){ return s && (s.n || s.u); }).slice(0, 24);
+  var sl = h("ul");
+  src.forEach(function(s){ var u = safeUrl(s.u); sl.append(h("li", null, u ? h("a", {href:u, target:"_blank", rel:"noopener noreferrer"}, str(s.n || u)) : str(s.n))); });
+  var hl = D && D.health;
+  el.append(
+    h("div", null,
+      h("details", null, h("summary", null, "Hoe de desk rekent"),
+        h("p", null, "Per markt weegt de desk 7 factoren (Fed, rente, dollar of winsten, risico, flows of macro, structuur, sentiment). Elke factor krijgt een richting van −2 tot +2 en een vast gewicht."),
+        h("p", null, "Score = 100 × Σ(richting × gewicht) ÷ (2 × Σ gewicht). Vanaf ±15 is de bias licht, vanaf ±40 vol."),
+        h("p", null, "Zekerheid = 20 + 60 × eensgezindheid × data-dekking + 15 × min(1, |score| ÷ 50) − event-risico, begrensd tussen 10% en 90%. Eensgezindheid is hoe sterk de factoren dezelfde kant op wijzen; data-dekking is het deel van de factoren met verse data in deze run; event-risico is 10 of 20 punten als er binnen 1 tot 3 dagen tier-1 data komt."),
+        h("p", null, "Rente, dollar, structuur, risico en (voor de indices) sentiment komen rechtstreeks uit de koersdata. Fed, winsten, macro, flows en safe-haven beoordeelt het AI-model op basis van de nieuwskoppen van die dag."),
+        h("p", null, "De desk-run draait op werkdagen rond 07:46, 13:46 en 22:46 Brusselse tijd op GitHub en publiceert het resultaat in deze app. Het scherm haalt elke paar minuten de nieuwste desk op." + (D && D.engine && D.engine.ai ? " Analyse in de laatste run: " + str(D.engine.ai) + "." : ""))
+      ),
+      h("p", null, "Geen financieel advies. Koersen zijn momentopnames van de laatste desk-run en lopen achter op je broker; je platform is leidend voor entries en stops." + (hl && hl.note ? " Opmerking van de desk: " + str(hl.note) : "") + (hl && arr(hl.missing).length ? " Ontbrak in deze run: " + arr(hl.missing).join(", ") + "." : ""))
+    ),
+    h("div", null, h("details", null, h("summary", null, "Bronnen van deze run (" + src.length + ")"), src.length ? sl : h("p", null, "Geen bronnen opgegeven.")))
+  );
+}
+
+/* ---------- toast ---------- */
+var toastT = null;
+function toast(msg){ var t = $("#toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(function(){ t.classList.remove("on"); }, 4200); }
+
+/* ---------- render all ---------- */
+function renderAll(animate){
+  renderFresh(); renderDay(); renderHero(); renderMeters(animate); renderAgainst(); renderCalendar(); renderNews(); renderPulse(); renderRecord(); renderFoot(); renderSugg();
+  var ctx = $("#askCtx"); if (ctx) ctx.textContent = D ? "Op basis van de desk-run van " + dayLabel(tms(D.asof) || Date.now(), Date.now()).toLowerCase() + " " + hm(tms(D.asof)) : "Wacht op de eerste desk-run";
+}
+function onDesk(data){
+  var first = !D, isNew = !!(D && data && data.runId && data.runId !== D.runId);
+  D = data;
+  renderAll(first || isNew);
+  if (isNew) toast("Nieuwe desk-run binnen (" + hm(tms(D.asof)) + "). Alles is bijgewerkt.");
+}
+
+/* ---------- data van GitHub ---------- */
+var POLL_MS = 180000, LAST_FETCH = 0, FETCHING = false;
+function getJSON(path){
+  return fetch(path + "?t=" + Date.now(), {cache:"no-store"}).then(function(r){
+    if (!r.ok){ var e = new Error("HTTP " + r.status); e.status = r.status; throw e; }
+    return r.json();
+  });
+}
+function byAsofDesc(a, b){ var x = str(a && a.asof), y = str(b && b.asof); return x < y ? 1 : x > y ? -1 : 0; }
+function refresh(){
+  if (FETCHING) return;
+  FETCHING = true; LAST_FETCH = Date.now();
+  Promise.all([getJSON("data/desk.json"), getJSON("data/runs.json").catch(function(){ return null; })])
+    .then(function(res){
+      var desk = res[0], runs = res[1];
+      CONN = "live";
+      if (Array.isArray(runs)) RUNS = runs.filter(Boolean).sort(byAsofDesc);
+      if (desk && desk.runId && (!D || desk.runId !== D.runId)) onDesk(desk);
+      else { renderFresh(); renderRecord(); renderDeltas(); }
+    })
+    .catch(function(e){
+      if (e && e.status === 404){ CONN = "empty"; if (!D) renderAll(false); return; }
+      CONN = D ? "stale" : "error";
+      if (!D) renderAll(false); else renderFresh();
+    })
+    .then(function(){ FETCHING = false; });
+}
+
+/* ---------- vraag de desk via Claude (ook gratis) ---------- */
+var LAST_FOCUS = null;
+function openAsk(q){
+  var d = $("#ask"), sc = $("#scrim");
+  LAST_FOCUS = document.activeElement;
+  d.classList.add("open"); d.setAttribute("aria-hidden", "false"); sc.classList.add("on");
+  $("#openAsk").setAttribute("aria-expanded", "true");
+  if (!$("#msgs").children.length) sysMsg("Typ je vraag of kies er een hieronder. 'Kopieer voor Claude' zet je vraag plus alle desk-data op je klembord. Open daarna Claude, plak alles in een nieuwe chat en verstuur. Dat werkt ook met een gratis Claude-account.");
+  $("#askOut").hidden = true;
+  if (q) $("#askInput").value = q;
+  setTimeout(function(){ $("#askInput").focus(); }, 60);
+}
+function closeAsk(){
+  var d = $("#ask");
+  d.classList.remove("open"); d.setAttribute("aria-hidden", "true"); $("#scrim").classList.remove("on");
+  $("#openAsk").setAttribute("aria-expanded", "false");
+  if (LAST_FOCUS && LAST_FOCUS.focus) LAST_FOCUS.focus();
+}
+function sysMsg(t){ var m = h("div", {class:"msg s"}, t); $("#msgs").append(m); m.scrollIntoView({block:"end"}); return m; }
+function deskForPrompt(){
+  if (!D) return "{}";
+  var computed = {};
+  arr(D.assets).forEach(function(a){ var ev = evalAsset(a); computed[str(a.id)] = {score:ev.score, bias:bias(ev.score).t, zekerheid:ev.conf, eensgezindheid:Math.round(ev.agree * 100), dekking:Math.round(ev.cov * 100), eventRisico:ev.pen}; });
+  var recent = scoredCalls().slice(0, 12).map(function(x){ return {dag:x.day, sessie:x.ses, id:x.id, score:x.score, beweging:+x.mv.toFixed(2), uitkomst:x.kind}; });
+  var copy = {}; for (var k in D) if (k !== "sources") copy[k] = D[k];
+  var s = JSON.stringify({desk:copy, berekend:computed, trackrecord:recent});
+  return s.length > 150000 ? s.slice(0, 150000) : s;
+}
+function rulesTurn(){
+  var t = D && tms(D.asof);
+  return [
+    "Je bent de macro-desk van KAIROS. Je trader handelt supply & demand op XAUUSD (goud), US500 en US100, vooral in de New York-sessie, en woont in Brussel.",
+    "Hieronder staat de laatste desk-run als JSON (snapshot van " + (t ? new Date(t).toISOString() : "onbekend") + "; het is nu " + new Date().toISOString() + ").",
+    "Regels:",
+    "- Antwoord in het Nederlands, kort en concreet: hooguit zo'n 170 woorden, tenzij de trader om meer vraagt. Korte alinea's of bullets.",
+    "- Gebruik alleen de desk-data hieronder. Staat iets er niet in (een live koers, een niveau, een cijfer), zeg dat eerlijk. Verzin niets.",
+    "- Leg een call uit via de factoren (richting d van -2 tot +2, gewicht w), de levels, 'flip', 'risk', de kalender en het nieuws. Noem een bron als die erbij staat.",
+    "- Gebruik de scores uit 'berekend'; reken ze niet opnieuw uit.",
+    "- Vertaal waar het helpt naar S&D-taal (zones, liquidity sweeps, MSB, killzones), maar geef geen garanties en geen persoonlijk financieel advies. De koersen in de data lopen achter op de broker.",
+    "- Is de snapshot ouder dan 12 uur, meld dat dan in je eerste zin.",
+    "DESK-DATA:",
+    deskForPrompt()
+  ].join("\n");
+}
+function copyText(text){
+  if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+  return new Promise(function(res, rej){
+    try {
+      var ta = h("textarea", {style:{position:"fixed", left:"-9999px", top:"0"}}); ta.value = text;
+      document.body.append(ta); ta.select(); var ok = document.execCommand("copy"); ta.remove();
+      if (ok) res(); else rej(new Error("copy"));
+    } catch (e) { rej(e); }
+  });
+}
+function askCopy(){
+  var q = str($("#askInput").value).trim();
+  if (!q){ $("#askInput").focus(); return; }
+  if (!D){ sysMsg("Er is nog geen desk-run om over te vragen. Probeer het na de eerste run."); return; }
+  var text = rulesTurn() + "\n\nVRAAG VAN DE TRADER:\n" + q;
+  copyText(text).then(function(){
+    $("#msgs").append(h("div", {class:"msg u"}, q));
+    $("#askOk").textContent = "Gekopieerd: je vraag plus de desk-data.";
+    $("#askOut").hidden = false;
+    $("#openClaude").focus();
+  }, function(){
+    sysMsg("Automatisch kopiëren lukte niet. Selecteer de tekst hieronder, kopieer hem en plak hem in Claude.");
+    var ta = h("textarea", {class:"fallback", readonly:true}); ta.value = text; $("#msgs").append(ta); ta.focus(); ta.select();
+  });
+}
+function renderSugg(){
+  var box = $("#sugg"); if (!box) return; box.replaceChildren();
+  var qs = [];
+  var g = arr(D && D.assets).filter(function(a){ return a.id === "XAUUSD"; })[0];
+  if (g){ var b = bias(evalAsset(g).score).t.toLowerCase(); qs.push("Waarom is goud " + b + "?"); }
+  qs.push("Wat kan de bias vandaag omdraaien?", "Geef me een plan voor de NY-sessie op US100", "Welke events moet ik vandaag vermijden?", "Wie loopt tegen de desk in en wat betekent dat?");
+  qs.forEach(function(q){ box.append(h("button", {type:"button", onclick:function(){ $("#askInput").value = q; $("#askOut").hidden = true; $("#askInput").focus(); }}, q)); });
+}
+
+/* ---------- wiring ---------- */
+$("#openAsk").addEventListener("click", function(){ openAsk(); });
+$("#fabAsk").addEventListener("click", function(){ openAsk(); });
+$("#closeAsk").addEventListener("click", closeAsk);
+$("#scrim").addEventListener("click", closeAsk);
+$("#askForm").addEventListener("submit", function(e){ e.preventDefault(); askCopy(); });
+$("#askInput").addEventListener("keydown", function(e){ if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); askCopy(); } });
+$("#calHigh").addEventListener("click", function(){ CAL_HIGH = !CAL_HIGH; try { localStorage.setItem("kairos.calHigh", CAL_HIGH ? "1" : "0"); } catch (e) {} renderCalendar(); });
+document.addEventListener("keydown", function(e){
+  if (e.key === "Escape" && $("#ask").classList.contains("open")) closeAsk();
+  else if (e.key === "/" && !/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "")){ e.preventDefault(); openAsk(); }
+});
+
+setInterval(function(){
+  var now = Date.now();
+  tickDay();
+  document.querySelectorAll("[data-cd]").forEach(function(el){ var t = +el.getAttribute("data-cd"); el.textContent = countdown(t - now); if (now > t + 60000) renderHero(); });
+}, 1000);
+setInterval(function(){
+  var now = Date.now();
+  renderFresh(); renderDay();
+  document.querySelectorAll("[data-in]").forEach(function(el){ el.textContent = inShort(+el.getAttribute("data-in") - now); });
+}, 30000);
+
+renderAll(false);
+if (window.__KAIROS_DEMO__){ CONN = "live"; RUNS = arr(window.__KAIROS_DEMO__.runs); onDesk(window.__KAIROS_DEMO__.desk); }
+else {
+  refresh();
+  setInterval(function(){ if (!document.hidden) refresh(); }, POLL_MS);
+  document.addEventListener("visibilitychange", function(){ if (!document.hidden && Date.now() - LAST_FETCH > 30000) refresh(); });
+  window.addEventListener("online", refresh);
+}
+if ("serviceWorker" in navigator && location.protocol === "https:"){
+  window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
+}
+})();
+</script>
+</body>
+</html>
