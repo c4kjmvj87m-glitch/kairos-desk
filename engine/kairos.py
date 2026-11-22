@@ -76,9 +76,10 @@ def ychart(sym, rng, iv, prepost=True):
             if not res:
                 raise RuntimeError("leeg antwoord")
             q0 = ((res.get("indicators") or {}).get("quote") or [{}])[0]
-            bars = [{"t": t, "o": o, "h": h, "l": lo, "c": c}
-                    for t, o, h, lo, c in zip(res.get("timestamp") or [], q0.get("open") or [], q0.get("high") or [],
-                                              q0.get("low") or [], q0.get("close") or [])
+            vols = q0.get("volume") or []
+            bars = [{"t": t, "o": o, "h": h, "l": lo, "c": c, "v": (vols[i] if i < len(vols) and vols[i] else 0)}
+                    for i, (t, o, h, lo, c) in enumerate(zip(res.get("timestamp") or [], q0.get("open") or [], q0.get("high") or [],
+                                                             q0.get("low") or [], q0.get("close") or []))
                     if None not in (o, h, lo, c) and c > 0]
             return {"meta": res.get("meta") or {}, "bars": bars}
         except Exception as e:
@@ -103,13 +104,31 @@ def yfetch_many(reqs):
 MCODE = "FGHJKMNQUVXZ"
 
 
-def gold_contract(now=NOW):
-    """Actief goudcontract: het eerste van feb/apr/jun/aug/okt/dec dat nog minstens 32 dagen wegligt."""
+def gold_contracts(now=NOW):
+    """De twee eerstvolgende goudcontracten (feb/apr/jun/aug/okt/dec) waarvan de leveringsmaand nog niet begonnen is."""
+    out = []
     for k in range(14):
         y, m = now.year + (now.month - 1 + k) // 12, (now.month - 1 + k) % 12 + 1
-        if m % 2 == 0 and (datetime(y, m, 1, tzinfo=UTC) - now).days >= 32:
-            return f"GC{MCODE[m - 1]}{y % 100:02d}.CMX"
-    return "GC=F"
+        if m % 2 == 0 and datetime(y, m, 1, tzinfo=UTC) > now:
+            out.append(f"GC{MCODE[m - 1]}{y % 100:02d}.CMX")
+        if len(out) == 2:
+            break
+    return out
+
+
+def gold_contract(now=NOW):
+    """Het actiefste contract: het meeste volume in de laatste 24 uurkaarsen (zo is het verschil met spot het stabielst)."""
+    cands = gold_contracts(now)
+    best, vol = None, -1
+    for c in cands:
+        try:
+            v = sum(b["v"] for b in ychart(c, "5d", "1h")["bars"][-24:])
+        except Exception:
+            v = -1
+        if v > vol:
+            best, vol = c, v
+    log(f"[i] goudcontract {best} (volume 24 uur {vol}; kandidaten {', '.join(cands)})")
+    return best or "GC=F"
 
 
 def index_contract(root, exch, now=NOW):
@@ -323,6 +342,65 @@ def treasury_curve():
     if len(rows) < 2:
         raise RuntimeError("te weinig rentedata")
     return rows
+
+
+# ---------------------------------------------------------------- agenda
+IMP2_US = re.compile(r"\b(PMI|ISM|Consumer Confidence|Durable Goods|Retail Sales|PPI|GDP|JOLTS|Unemployment Claims|"
+                     r"FOMC Meeting Minutes|Unemployment Rate|Average Hourly Earnings|UoM|Fed Chair|Powell|Speaks)\b", re.I)
+NONUS = {"EUR", "GBP", "JPY", "CNY"}
+
+
+def calendar3():
+    raw = []
+    for u in L.FF_FEEDS:
+        try:
+            raw += json.loads(L.fetch(u))
+        except Exception as e:
+            if "thisweek" in u:
+                MISSING.append("agenda (ForexFactory)")
+                log("[!] agenda", e)
+    start = datetime.now(BXL).replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=5)
+    seen, ev = set(), []
+    for e in raw:
+        try:
+            t = datetime.fromisoformat(e["date"])
+        except Exception:
+            continue
+        if not (start <= t.astimezone(BXL) < end):
+            continue
+        c, impact, title = e.get("country", ""), e.get("impact", ""), e.get("title", "")
+        if c == "USD":
+            if impact not in ("High", "Medium", "Holiday"):
+                continue
+            t1 = bool(L.TIER1.search(title)) and not title.startswith("ADP")
+            imp = 3 if t1 else 2 if (impact == "High" or IMP2_US.search(title)) else 1
+            cty = "US"
+        elif c in NONUS:
+            if impact not in ("High", "Medium"):
+                continue
+            imp = 2 if impact == "High" else 1
+            cty = L.CCY.get(c, c[:2])
+            for word, cc in (("German", "DE"), ("French", "FR"), ("Italian", "IT"), ("Spanish", "ES")):
+                if title.startswith(word):
+                    cty = cc
+        else:
+            continue
+        key = (title, c, t.isoformat())
+        if key in seen:
+            continue
+        seen.add(key)
+        ev.append({"t": iso(t), "cty": cty, "ev": L.nl_event(title), "en": title, "imp": imp,
+                   "prev": L.nl_val(e.get("previous")) or None, "cons": L.nl_val(e.get("forecast")) or None, "act": None,
+                   "hits": PRIMARY[:] if cty == "US" else ["XAUUSD"]})
+    ev.sort(key=lambda x: (x["t"], -x["imp"]))
+    if len(ev) > 16:
+        keep = sorted(ev, key=lambda x: (-(x["imp"] * 2 + (1 if x["cty"] == "US" else 0)), x["t"]))[:16]
+        ev = sorted(keep, key=lambda x: (x["t"], -x["imp"]))
+    for i, x in enumerate(ev):
+        x["id"] = f"e{i}"
+    log(f"[ok] agenda: {len(ev)} events")
+    return ev
 
 
 # ---------------------------------------------------------------- Fed
@@ -618,7 +696,18 @@ def g_ok(g, default_t=""):
 
 
 def cut(x, n):
-    return str(x).strip()[:n] if isinstance(x, str) and x.strip() else None
+    """Tekst inkorten tot n tekens, bij voorkeur op het einde van een zin, anders op een woordgrens."""
+    if not isinstance(x, str) or not x.strip():
+        return None
+    t = re.sub(r"\s+", " ", x).strip()
+    if len(t) <= n:
+        return t
+    part = t[:n]
+    ends = [m.end() for m in re.finditer(r"[.!?](?=\s|$)", part)]
+    if ends and ends[-1] >= n * 0.5:
+        return part[:ends[-1]].strip()
+    sp = part.rfind(" ")
+    return (part[:sp] if sp > n * 0.5 else part[:n - 1]).rstrip(" ,;:-") + "…"
 
 
 LABEL_RE = re.compile(r"^\s*(licht\s+bullish|licht\s+bearish|bullish|bearish|neutraal)\b[\s:,;.\-–]*", re.I)
@@ -732,23 +821,12 @@ def main():
         if real and len(real) >= 6:
             L.REAL_SRC[0] = name
             break
-    cal = safe(L.calendar, "kalender", [])
+    cal = safe(calendar3, "agenda", [])
     heads = safe(L.news, "nieuws", [])
     fg = L.fear_greed()
     meters = safe(stocktwits, "stocktwits", [])
     fed = safe(fed_block, "Fed")
 
-    # ---- agenda: landen en belang zoals de Claude-desk ze gebruikt
-    for x in cal:
-        en = x["en"]
-        if x["cty"] == "EU":
-            for word, cc in (("German", "DE"), ("French", "FR"), ("Italian", "IT"), ("Spanish", "ES")):
-                if en.startswith(word):
-                    x["cty"] = cc
-        if x["cty"] == "US":
-            x["imp"] = 3 if (L.TIER1.search(en) and not en.startswith("ADP")) else 2 if (L.TIER2.search(en) or x["imp"] >= 3) else 1
-        else:
-            x["imp"] = 2 if x["imp"] >= 3 else 1
     ep, ep_why = L.event_penalty(cal)
 
     # ---- context-koersen
@@ -758,7 +836,7 @@ def main():
                     ("BRENT", "Olie (Brent)"), ("XAGUSD", "Zilver"), ("COPPER", "Koper"), ("US30", "Dow Jones"), ("BTCUSD", "Bitcoin")):
         q = None
         if cid == "US02Y" and curve:
-            q = {"px": curve[-1][1], "chgPct": pct(curve[-1][1], curve[-2][1]), "dp": 2, "at": curve[-1][0]}
+            q = {"px": curve[-1][1], "prev": curve[-2][1], "chgPct": pct(curve[-1][1], curve[-2][1]), "dp": 2, "at": curve[-1][0]}
         elif cid == "US30" and us30:
             q = {"px": us30["px"], "chgPct": pct(us30["px"], us30["prev"]), "dp": 2}
         elif cid == "XAGUSD":
@@ -821,12 +899,14 @@ def main():
                "1. Find 3 to 8 posts on X (Twitter) or Truth Social from the last 48 hours (72 hours in the weekend) that matter for gold, "
                "the Fed or the US stock market. Accounts that matter: The Kobeissi Letter, Nick Timiraos (WSJ Fed reporter), Walter Bloomberg "
                "(@DeItaone), First Squawk, FinancialJuice, Peter Schiff, World Gold Council, Mohamed El-Erian, Fed officials, and the US "
-               "president on Truth Social. Search with the account or topic and today's date in words. Keep only posts whose date you can "
-               "see. Never invent a post, handle, number of views or link. x.com pages cannot be opened: use the search result text and date.",
+               "president on Truth Social. Search with the account or topic, the word X or tweet, and today's date in words "
+               "(for example: Kobeissi Letter X post gold November 23 2026; site:x.com DeItaone Fed). Keep only the post itself "
+               "(x.com, twitter.com or truthsocial.com) or a news page that quotes the post with its date. Keep only posts whose date you "
+               "can see. Never invent a post, handle, number of views or link. who is only the name of the account.",
                ]
-        if fed:
-            ask.append(f"2. The current CME FedWatch probabilities for the FOMC meeting of {fed['meeting']} (hike, hold, cut in %), "
-                       "with the publisher and the date of the reading.")
+        if not fed:
+            ask.append("2. The current CME FedWatch probabilities for the next FOMC meeting (hike, hold, cut in %), "
+                       "with the meeting date, the publisher and the date of the reading.")
         if released:
             ask.append("3. The actual outcomes of these US releases from today, if they are out: " +
                        "; ".join(f"{x['id']} {x['en']} at {x['t']}" for x in released[:5]) + ".")
@@ -851,7 +931,10 @@ def main():
             url = str(p.get("url") or "")
             if url and not url.startswith("http"):
                 url = ""
-            posts.append({"t": iso(t), "day": bool(p.get("day")), "who": str(p["who"])[:40], "handle": str(p.get("handle") or "")[:30],
+            who = re.sub(r"\s*[\(\[].*$", "", str(p["who"])).strip()
+            if not who:
+                continue
+            posts.append({"t": iso(t), "day": bool(p.get("day")), "who": who[:40], "handle": str(p.get("handle") or "")[:30],
                           "net": p.get("net") if p.get("net") in ("X", "Truth Social", "Stocktwits") else "X",
                           "kind": p.get("kind") if p.get("kind") in ("nieuws", "data", "mening", "politiek") else "mening",
                           "trust": int(clamp(p.get("trust") or 1, 1, 3)), "reach": str(p.get("reach") or "")[:30], "url": url,
@@ -859,17 +942,17 @@ def main():
         posts.sort(key=lambda x: x["t"], reverse=True)
         posts = posts[:8]
         fw = research.get("fedwatch")
-        if fed and isinstance(fw, dict) and all(isinstance(fw.get(k), (int, float)) for k in ("hike", "hold", "cut")):
+        if not fed and isinstance(fw, dict) and fw.get("meeting") and all(isinstance(fw.get(k), (int, float)) for k in ("hike", "hold", "cut")):
             tot = fw["hike"] + fw["hold"] + fw["cut"]
             if 95 <= tot <= 105:
-                fed.update({"hike": jsround(fw["hike"]), "hold": jsround(fw["hold"]), "cut": jsround(fw["cut"]),
-                            "src": f"CME FedWatch via {str(fw.get('src') or 'nieuws')[:40]}", "asof": str(fw.get("asof") or day_label(NOW))[:20]})
+                fed = {"meeting": str(fw["meeting"])[:10], "hike": jsround(fw["hike"]), "hold": jsround(fw["hold"]), "cut": jsround(fw["cut"]),
+                       "rate": "", "src": f"CME FedWatch via {str(fw.get('src') or 'nieuws')[:30]}", "asof": str(fw.get("asof") or day_label(NOW))[:12]}
         acts = {str(a.get("id")): str(a.get("act"))[:16] for a in (research.get("actuals") or []) if isinstance(a, dict) and a.get("act")}
         for x in cal:
             if x["id"] in acts and x["t"] <= iso(NOW):
                 x["act"] = acts[x["id"]]
-        if research.get("missing"):
-            MISSING.append(("Zoeken: " + str(research["missing"]))[:160])
+        if len(posts) < 3:
+            MISSING.append(f"Minder dan 3 berichten van X gevonden ({len(posts)})")
     elif os.environ.get("ANTHROPIC_API_KEY"):
         MISSING.append("Zoeken op internet lukte niet: geen posts van X en geen FedWatch-kans uit het nieuws")
     else:
@@ -888,7 +971,11 @@ def main():
     if dxy:
         P.append(f"- DXY: {nl(dxy['px'], 3)} | {sgn(pct(dxy['px'], dxy['prev']), 2, '%')} | {sgn(L.ret_n(dxy, 5), 2, '%')} | {sgn(L.ret_n(dxy, 20), 2, '%')}")
     for c in context_raw:
-        P.append(f"- {c['id']} ({c['name']}): {nl(c['px'], 3 if c['id'] in ('US10Y', 'US02Y') else 2)} | {sgn(c['chgPct'], 2, '%')}")
+        if c["id"] in ("US10Y", "US02Y") and c["q"].get("prev") is not None:
+            pp = c["px"] - c["q"]["prev"]
+            P.append(f"- {c['id']} ({c['name']}): {nl(c['px'], 3)}% | {sgn(pp, 2)} procentpunt vandaag (write yield changes in procentpunt, never in %)")
+        else:
+            P.append(f"- {c['id']} ({c['name']}): {nl(c['px'], 2)} | {sgn(c['chgPct'], 2, '%')}")
     for f_ in fx:
         P.append(f"- {f_['id']}: {f_['px']} | {sgn(f_['chgPct'], 2, '%')}")
     if real:
@@ -986,8 +1073,11 @@ def main():
     # ---- 3. de desk-tekst
     lines = ["", "FINAL DESK (computed; copy labels exactly, never contradict them):"]
     for a in assets:
+        cp = a["chgPct"]
+        need = cp is not None and abs(a["score"]) >= 15 and abs(cp) >= 0.25 and (cp > 0) != (a["score"] > 0)
         lines.append(f"- {a['id']}: label {L.label(a['score'])}, confidence {a['conf']}%, event penalty {a['ep']} ({a['epWhy']}), "
-                     f"price {nlnum(a['px'])}, today {sgn(a['chgPct'], 2, '%')}.")
+                     f"price {nlnum(a['px'])}, today {sgn(a['chgPct'], 2, '%')}. moveNote: "
+                     f"{'REQUIRED: today the price moves against the desk' if need else 'null'}.")
         for f_ in a["factors"]:
             way = "pushes up" if f_["d"] > 0 else "pushes down" if f_["d"] < 0 else "neutral"
             lines.append(f"    factor {f_['k']} ({f_['label']}, weight {f_['w']}): d={f_['d']:+d} {way}; "
@@ -1009,7 +1099,10 @@ def main():
               "- htf: d1 and h4 texts (max 90 chars) from the computed higher-timeframe facts; todo (max 150 chars) = what the trader checks on his own H1 and H4 chart.",
               "- brief: what changed since the previous run, what the market reacts to, how that fits the desk, what decides the coming session. "
               "moodTo: 2 greedy, 1 optimistic, 0 neutral, -1 careful, -2 scared. watch: 2 or 3 concrete things with levels, Brussels times and events.",
-              "- moveNote only when today's move runs at least 0,25% against a label with score of +/-15 or more, otherwise null.",
+              "- moveNote (max 140): only where the line above says REQUIRED: what it means that the price moves against the desk today. Otherwise null.",
+              "- risk (max 140): the event risk for the coming session: the calendar items that can move this market, with Brussels day and time. Not a stop or an invalidation level.",
+              "- flip (max 160): what would flip or weaken the bias (a level and/or an event).",
+              "- Keep these trader words in English exactly as written: liquidity grab, sweep, engulfing, MSB, supply, demand, zone, fresh, killzone, long, short, stop.",
               "- g on US500 and US100: what the state of that index means for gold. regime.g, dxy.g, context g, fed.g, sentiment.g: what it means for gold.",
               "JSON shape: " + json.dumps({
                   "headline": "max 140 chars, gold first", "summary": ["exactly 3 bullets, max 130 chars"],
