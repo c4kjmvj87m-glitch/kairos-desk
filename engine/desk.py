@@ -687,7 +687,9 @@ def f_rates(y10, real, gold):
         return None
     a = abs(ch)
     mag = 0 if a < 5 else 1 if a < 15 else 2
-    return (-mag if ch > 0 else mag), what + ". Stijgende rente drukt, dalende rente helpt.", src
+    mkt = "goud" if gold else "aandelen"
+    concl = (f"rente daalt, dat steunt {mkt}" if ch < 0 else f"rente stijgt, dat drukt {mkt}") if mag else "rente nauwelijks veranderd, geen edge"
+    return (-mag if ch > 0 else mag), f"{what}: {concl}.", src
 
 
 def f_usd(dxy):
@@ -697,7 +699,8 @@ def f_usd(dxy):
     t = chg_pct(dxy)
     a = abs(w)
     mag = 0 if a < 0.3 else 1 if a < 1.0 else 2
-    txt = f"DXY {nl(dxy['px'], 2)}, {sgn(w, 2, '%')} in 5 dagen" + (f" ({sgn(t, 2, '%')} vandaag)" if t is not None else "") + ". Een sterkere dollar drukt goud."
+    concl = ("dollar sterker, dat drukt goud" if w > 0 else "dollar zwakker, dat steunt goud") if mag else "dollar vrijwel vlak, geen edge"
+    txt = f"DXY {nl(dxy['px'], 2)}, {sgn(w, 2, '%')} in 5 dagen" + (f" ({sgn(t, 2, '%')} vandaag)" if t is not None else "") + f": {concl}."
     return (-mag if w > 0 else mag), txt, dxy["src"]
 
 
@@ -708,7 +711,8 @@ def f_risk_idx(vix, wti):
         pts += -2 if v >= 30 else -1 if v >= 24 else 1 if v <= 15 else 0
         if v5 is not None:
             pts += 1 if v5 <= -10 else -1 if v5 >= 10 else 0
-        parts.append(f"VIX {nl(v, 1)}" + (f" ({sgn(v5, 0, '%')} in 5 dagen)" if v5 is not None else ""))
+        mood = "hoge angst" if v >= 30 else "verhoogd" if v >= 24 else "rustig" if v <= 15 else "normaal"
+        parts.append(f"VIX {nl(v, 1)}, {mood}" + (f" ({sgn(v5, 0, '%')} in 5 dagen)" if v5 is not None else ""))
     if wti:
         w5 = ret_n(wti, 5)
         if w5 is not None:
@@ -716,7 +720,9 @@ def f_risk_idx(vix, wti):
             parts.append(f"olie {sgn(w5, 1, '%')} in 5 dagen")
     if not parts:
         return None
-    return clamp(pts, -2, 2), ", ".join(parts) + ". Hoge of stijgende VIX en dure olie drukken aandelen.", "Yahoo Finance"
+    d = clamp(pts, -2, 2)
+    concl = "dat drukt aandelen" if d < 0 else "dat steunt aandelen" if d > 0 else "geen duidelijke edge"
+    return d, ", ".join(parts) + f": {concl}.", "Yahoo Finance"
 
 
 def f_sent_idx(fg):
@@ -881,7 +887,7 @@ def groq_call(system, user, key, model, max_tokens):
                "temperature": 0.3, "max_completion_tokens": int(max(1500, min(max_tokens + 1000, 7600 - est))),
                "response_format": {"type": "json_object"}}
     if "gpt-oss" in model:
-        payload["reasoning_effort"] = "low"
+        payload["reasoning_effort"] = "medium"
     elif "qwen" in model:
         payload["reasoning_format"] = "hidden"
     try:
@@ -894,7 +900,13 @@ def groq_call(system, user, key, model, max_tokens):
         for k in ("response_format", "reasoning_effort", "reasoning_format"):
             payload.pop(k, None)
         r = api_json(f"{GROQ}/chat/completions", headers={"Authorization": f"Bearer {key}"}, payload=payload, tries=3)
-    return parse_json(r["choices"][0]["message"].get("content") or "")
+    ch, u = r["choices"][0], r.get("usage") or {}
+    log(f"[i] Groq {model}: {u.get('prompt_tokens')} tokens in, {u.get('completion_tokens')} uit, einde: {ch.get('finish_reason')}")
+    if ch.get("finish_reason") == "length" and payload.get("reasoning_effort") == "medium":
+        payload["reasoning_effort"] = "low"  # te lang nagedacht: nog een keer, korter
+        r = api_json(f"{GROQ}/chat/completions", headers={"Authorization": f"Bearer {key}"}, payload=payload, tries=3)
+        ch = r["choices"][0]
+    return parse_json(ch["message"].get("content") or "")
 
 
 def ai_json(system, user, max_tokens=3500):
@@ -975,38 +987,57 @@ def data_pack(S, cal, heads, fg, code_f, session):
 
 def step1_prompt(pack):
     lines = [pack, "", "OPDRACHT 1: beoordeel de kwalitatieve factoren met een richting d van -2 tot +2 (+ is bullish voor die markt).",
-             "Gebruik ±2 alleen bij sterk en duidelijk bewijs, 0 als de koppen geen edge geven. Zet \"fresh\": false als je in de koppen geen enkel bewijs vond.",
+             "Vul ELKE factor hieronder in. Gebruik ±2 alleen bij sterk en duidelijk bewijs. Is het nieuws gemengd of neutraal, geef dan d 0 met fresh true.",
+             "Zet fresh false alleen als geen enkele kop iets over die factor zegt. Uitspraken van Fed-leden, rentekansen (FedWatch) en renteverwachtingen tellen als bewijs voor het Fed-pad.",
+             "In text staat het bewijs in eigen woorden (welke kop of welk cijfer), in src de bron en datum van die kop.",
              "Factoren:"]
     for a in PRIMARY:
         ks = [k for k, _, _, kind in MODEL[a] if kind == "ai"]
         lines.append(f"- {a}: " + "; ".join(AI_GUIDE[k] for k in ks))
+    ex = {"d": 0, "fresh": True, "text": "bewijs in max 200 tekens", "src": "bron, DD-MM"}
+    shape = {"factors": {a: {k: ex for k, _, _, kind in MODEL[a] if kind == "ai"} for a in PRIMARY},
+             "fed": {"meeting": "JJJJ-MM-DD", "hike": 0, "hold": 0, "cut": 0, "src": "bron"},
+             "leans": {k: 0 for k in ("DXY", "US10Y", "VIX", "WTI", "BRENT", "XAGUSD", "US30", "BTCUSD")},
+             "news": [{"i": 0, "tags": [{"id": "XAUUSD", "d": 1}], "why": "max 110 tekens"}]}
     lines += [
-        "Geef ook: de marktverwachting voor de volgende Fed-vergadering alleen als een kop die noemt (anders null);",
+        "Geef ook: de marktverwachting voor de volgende Fed-vergadering in procenten, alleen als een kop die noemt (anders \"fed\": null);",
         "een richting (lean, -2..2 of null) voor DXY, US10Y, VIX, WTI, BRENT, XAGUSD, US30 en BTCUSD;",
         "en kies de 6 belangrijkste koppen met tags per markt (d +1 bullish, -1 bearish) en één zin 'why' in het Nederlands.",
-        'JSON-vorm: {"factors":{"XAUUSD":{"fed":{"d":-2,"fresh":true,"text":"max 200 tekens","src":"bron, datum"},"risk":{},"flows":{},"sent":{}},'
-        '"US500":{"fed":{},"earn":{},"macro":{}},"US100":{"fed":{},"earn":{},"macro":{}}},'
-        '"fed":{"meeting":"JJJJ-MM-DD","hike":0,"hold":0,"cut":0,"src":"bron"},'
-        '"leans":{"DXY":0,"US10Y":0,"VIX":0,"WTI":0,"BRENT":0,"XAGUSD":0,"US30":0,"BTCUSD":0},'
-        '"news":[{"i":0,"tags":[{"id":"XAUUSD","d":1}],"why":"max 110 tekens"}]}',
+        "JSON-vorm (vul de echte waarden in): " + json.dumps(shape, ensure_ascii=False),
     ]
     return "\n".join(lines)
 
 
 def step2_prompt(pack, assets, session):
-    L = [pack, "", "DEFINITIEVE DESK (berekend, getallen niet wijzigen):"]
+    L = [pack, "", "DEFINITIEVE DESK (berekend; neem labels, richtingen en getallen exact over):"]
     for a in assets:
-        fs = ", ".join(f"{f['label']} {f['d']:+d}" for f in a["factors"])
-        lv = "; ".join(f"{o['kind']} {nl(o['p'], INSTR[a['id']]['dp'])} ({o['note']})" for o in a["levels"])
-        L.append(f"- {a['id']}: {label(a['score'])}, zekerheid {a['conf']}%, event-risico {a['ep']} ({a['epWhy'] or 'geen'}). "
-                 f"Factoren: {fs}. Vandaag {sgn(a['chgPct'], 2, '%')}. Levels: {lv or 'geen'}.")
+        dp = INSTR[a["id"]]["dp"]
+        L.append(f"- {a['id']}: {label(a['score'])}, zekerheid {a['conf']}%, event-risico {a['ep']} ({a['epWhy'] or 'geen'}), "
+                 f"koers {nl(a['px'], dp) if a['px'] is not None else '-'}, vandaag {sgn(a['chgPct'], 2, '%')}.")
+        for f in a["factors"]:
+            way = "steunt" if f["d"] > 0 else "drukt" if f["d"] < 0 else "neutraal"
+            L.append(f"    · {f['label']} ({way}, {f['d']:+d}): {f['text'] if f['fresh'] else 'geen verse data'}")
+        for o in a["levels"]:
+            pos = "boven" if a["px"] and o["p"] > a["px"] else "onder"
+            dist = abs(o["p"] / a["px"] - 1) * 100 if a["px"] else 0
+            L.append(f"    · level {o['kind']} {nl(o['p'], dp)}: {nl(dist, 1)}% {pos} de koers ({o['note']})")
     nxt = "de volgende sessie (morgen Londen en New York)" if session == "close" else "de komende sessie"
-    L += ["", f"OPDRACHT 2: schrijf de desk-tekst voor {nxt}. Blijf consequent met de labels hierboven; spreek ze nooit tegen en zet geen scores in de tekst.",
-          "Playbook: supply & demand-plan met de gegeven levels (welke zones voorrang, wachten op een liquidity sweep en een market-structure break, "
-          "killzones Londen 08:00-11:00 en New York 13:00-16:00 Brusselse tijd, wanneer aan de kant blijven). Geen garanties.",
-          "moveNote alleen als de beweging van vandaag minstens 0,25% tegen een bias van ±15 of meer ingaat, anders null.",
+    L += ["", f"OPDRACHT 2: schrijf de desk-tekst voor {nxt}.",
+          "Regels: volg de labels hierboven en spreek ze nooit tegen. Noem rente, dollar, VIX en momentum alleen met de richting uit de factorregels "
+          "(staat er 'rente daalt', schrijf dan nooit 'stijgende rente'). Zet geen scores in de tekst. Verzin geen niveaus: gebruik alleen de levels hierboven.",
+          "Supply & demand-logica: een short-idee hoort bij een supply-zone BOVEN de koers, na een sweep van de highs boven die zone en een break naar beneden. "
+          "Een long-idee hoort bij een demand-zone ONDER de koers, na een sweep van de lows eronder en een break omhoog.",
+          "Velden per markt:",
+          "- call: één zin met de bias en de zone die ertoe doet, bijvoorbeeld 'Licht bearish zolang 3.657 (supply) houdt; kopers pas weer aan zet boven 3.700.' Geen order met entry en target.",
+          "- thesis: waarom, met de twee of drie zwaarste factoren en hun richting zoals in de factorregels.",
+          "- flip: wat de bias laat omslaan (een level of een event).",
+          "- risk: het grootste risico voor deze bias (een cijfer, event of level). Geen advies over positiegrootte of stop-loss.",
+          "- playbook: het S&D-plan met de levels hierboven: welke zone voorrang heeft, wachten op sweep en market-structure break, "
+          "killzones Londen 08:00-11:00 en New York 13:00-16:00 Brusselse tijd, en wanneer je aan de kant blijft. Geen garanties.",
+          "- moveNote: alleen als de beweging van vandaag minstens 0,25% tegen een bias van ±15 of meer ingaat, anders null.",
           'JSON-vorm: {"headline":"max 140 tekens","summary":["3 zinnen van max 130 tekens"],"regime":{"label":"max 40 tekens","tone":-1,"text":"max 240 tekens"},'
-          '"assets":{"XAUUSD":{"call":"max 120","thesis":"max 320","flip":"max 160","risk":"max 140","playbook":"max 260","moveNote":null},"US500":{},"US100":{}},'
+          '"assets":{"XAUUSD":{"call":"max 120","thesis":"max 320","flip":"max 160","risk":"max 140","playbook":"max 260","moveNote":null},'
+          '"US500":{"call":"","thesis":"","flip":"","risk":"","playbook":"","moveNote":null},"US100":{"call":"","thesis":"","flip":"","risk":"","playbook":"","moveNote":null}},'
           '"chatter":"max 200 tekens: waar traders en media nu op letten","calNotes":[{"id":"e0","note":"max 80 tekens"}]}']
     return "\n".join(L)
 
@@ -1114,7 +1145,11 @@ def main():
     texts = None
     if ai1:
         try:
-            texts = ai_json(SYSTEM, step2_prompt(pack, assets, session), 3500)
+            picked = [x.get("i") for x in (ai1.get("news") or []) if isinstance(x, dict) and isinstance(x.get("i"), int)]
+            heads2 = [heads[i] for i in picked if 0 <= i < len(heads)][:10] or heads[:10]
+            p2 = step2_prompt(data_pack(S, cal, heads2, fg, code_f, session), assets, session)
+            log(f"[i] prompt 2: {len(p2)} tekens")
+            texts = ai_json(SYSTEM, p2, 3500)
             log("[ok] AI stap 2")
         except Exception as e:
             NOTES.append("AI-tekst niet beschikbaar, standaardtekst gebruikt")
