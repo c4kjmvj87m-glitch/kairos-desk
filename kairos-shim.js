@@ -186,9 +186,25 @@
   var db = {doc: docRef, collection: function (path) { return query(path, null, null); }};
 
   /* ---------- gebruiker: naam en id op dit toestel ---------- */
+  function installed() {
+    try { return window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches; } catch (e) { return false; }
+  }
   var user = {
     id: function () { return Promise.resolve("toestel"); },
-    me: function () { return Promise.resolve({name: LS.get("kairos.naam") || ""}); }
+    me: function () {
+      var n = LS.get("kairos.naam") || "";
+      // Als app op het beginscherm heeft de app een eigen opslag (zeker op iPhone): vraag de naam daar één keer.
+      if (n || !installed() || LS.get("kairos.naamGevraagd")) return Promise.resolve({name: n});
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          var v = "";
+          try { v = (window.prompt("Hoe mag de desk je noemen? Laat leeg om over te slaan.") || "").trim().slice(0, 24); } catch (e) {}
+          LS.set("kairos.naamGevraagd", "1");
+          if (v) LS.set("kairos.naam", v);
+          resolve({name: v});
+        }, 900);
+      });
+    }
   };
 
   /* ---------- voorlezen met de stem van het toestel ---------- */

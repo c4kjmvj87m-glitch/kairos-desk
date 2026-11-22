@@ -1,5 +1,5 @@
 // KAIROS: de app werkt ook zonder netwerk met de laatste desk. Desk-data altijd eerst vers van GitHub.
-const SHELL = "kairos-shell-v2";
+const SHELL = "kairos-shell-v3";
 const DATA = "kairos-data-v2";
 const FONTS = "kairos-fonts-v1";
 const ASSETS = ["./", "./index.html", "./kairos-shim.js", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png"];
