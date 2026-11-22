@@ -246,7 +246,7 @@ def yahoo_at(sym, ts):
 def stooq(sym, max_jump=0.25):
     d1 = (NOW - timedelta(days=430)).strftime("%Y%m%d")
     d2 = (NOW + timedelta(days=2)).strftime("%Y%m%d")
-    txt = fetch(f"https://stooq.com/q/d/l/?s={urllib.parse.quote(sym)}&d1={d1}&d2={d2}&i=d")
+    txt = fetch(f"https://stooq.com/q/d/l/?s={urllib.parse.quote(sym)}&d1={d1}&d2={d2}&i=d", timeout=12, tries=1)
     bars = []
     for r in csv.DictReader(io.StringIO(txt)):
         try:
@@ -277,7 +277,7 @@ def _scale(s, f):
 
 
 INSTR = {
-    "XAUUSD": {"name": "Goud", "dp": 2, "spot": "XAU", "src": [("stooq", "xauusd", "spot"), ("yahoo", "GC=F", "goud-future")]},
+    "XAUUSD": {"name": "Goud", "dp": 2, "spot": "XAU", "src": [("yahoo", "GC=F", "goud-future"), ("stooq", "xauusd", "spot")]},
     "US500": {"name": "S&P 500", "dp": 1, "src": [("yahoo", "^GSPC", "index"), ("stooq", "^spx", "index")]},
     "US100": {"name": "Nasdaq 100", "dp": 1, "src": [("yahoo", "^NDX", "index"), ("stooq", "^ndx", "index")]},
     "ES": {"name": "S&P-future", "dp": 1, "src": [("yahoo", "ES=F", "")]},
@@ -287,7 +287,7 @@ INSTR = {
     "VIX": {"name": "Volatiliteit", "dp": 2, "jump": 1.5, "src": [("yahoo", "^VIX", "")]},
     "WTI": {"name": "Olie (WTI)", "dp": 2, "src": [("yahoo", "CL=F", ""), ("stooq", "cl.f", "")]},
     "BRENT": {"name": "Olie (Brent)", "dp": 2, "src": [("yahoo", "BZ=F", ""), ("stooq", "cb.f", "")]},
-    "XAGUSD": {"name": "Zilver", "dp": 2, "spot": "XAG", "src": [("stooq", "xagusd", ""), ("yahoo", "SI=F", "")]},
+    "XAGUSD": {"name": "Zilver", "dp": 2, "spot": "XAG", "src": [("yahoo", "SI=F", ""), ("stooq", "xagusd", "")]},
     "US30": {"name": "Dow Jones", "dp": 0, "src": [("yahoo", "^DJI", ""), ("stooq", "^dji", "")]},
     "BTCUSD": {"name": "Bitcoin", "dp": 0, "jump": 0.5, "src": [("yahoo", "BTC-USD", ""), ("stooq", "btcusd", "")]},
 }
