@@ -1172,7 +1172,8 @@ def main():
         picked = [{"i": i, "tags": []} for i in range(min(6, len(heads)))]
     picked = picked[:8]
     lines3 = ["", "TASK 3: write in very simple Dutch:",
-              "- calendar: for every event id: ev = the event name in Dutch (short, may keep CPI, PMI, m/m), per = the period like 'nov' or null, "
+              "- calendar: for every event id: ev = a short event name in Dutch, at most 32 characters, without the country (the app shows the country), "
+              "like 'Kern-PCE (per maand)', 'PMI industrie (eerste meting)' or 'Consumentenvertrouwen'; per = null, "
               "note (max 90) = what this number or event is, g = what it means for gold (both sides when it still has to come out; once actual is filled in, what the outcome did).",
               "- news: for each chosen headline index: why (max 120) = what happened in simple Dutch, g = what it means for gold.",
               "- social: read (max 280) = what people on X talk about most and whether that agrees with the desk; mood per market (-2..2, the crowd, not the desk); "
@@ -1310,7 +1311,7 @@ def assemble(run_id, session, S, assets, dxy, dxy_levels, context_raw, fx, cal, 
     calendar = []
     for x in cal[:16]:
         ct = C3.get(x["id"]) or {}
-        calendar.append({"t": x["t"], "cty": x["cty"], "ev": cut(ct.get("ev"), 60) or x["ev"], "per": cut(ct.get("per"), 12),
+        calendar.append({"t": x["t"], "cty": x["cty"], "ev": cut(ct.get("ev"), 40) or x["ev"], "per": None,
                          "imp": x["imp"], "prev": x["prev"], "cons": x["cons"], "act": x.get("act"),
                          "note": cut(ct.get("note"), 90) or "", "g": g_ok(ct.get("g"), "Nog niet bekend. Pas na het cijfer zie je wat het met goud doet."),
                          "hits": x["hits"]})
