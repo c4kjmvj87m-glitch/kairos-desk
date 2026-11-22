@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: "15 7,13,22 * * 1-5"
       timezone: "Europe/Brussels"
+    - cron: "50 7,13,22 * * 1-5"
+      timezone: "Europe/Brussels"
   workflow_dispatch:
 
 concurrency:
@@ -16,6 +18,8 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
+    outputs:
+      changed: ${{ steps.save.outputs.changed }}
     steps:
       - uses: actions/checkout@v5
       - name: Desk-run
@@ -27,19 +31,22 @@ jobs:
           KAIROS_GEMINI_MODEL: ${{ vars.KAIROS_GEMINI_MODEL }}
           KAIROS_GROQ_MODEL: ${{ vars.KAIROS_GROQ_MODEL }}
           KAIROS_SEARCHES: ${{ vars.KAIROS_SEARCHES }}
+          KAIROS_CATCHUP: ${{ github.event.schedule == '50 7,13,22 * * 1-5' && '1' || '0' }}
         run: python3 engine/kairos.py
       - name: Desk opslaan
+        id: save
         run: |
           git config user.name "kairos-desk-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/desk.json data/runs.json data/state.json
           if git diff --cached --quiet; then echo "Geen wijzigingen"; exit 0; fi
           git commit -q -m "Desk-run $(TZ=Europe/Brussels date '+%Y-%m-%d %H:%M')"
-          for i in 1 2 3; do git pull --rebase -q && git push -q && exit 0; sleep 5; done
+          for i in 1 2 3; do git pull --rebase -q && git push -q && echo "changed=true" >> "$GITHUB_OUTPUT" && exit 0; sleep 5; done
           exit 1
 
   deploy:
     needs: desk
+    if: needs.desk.outputs.changed == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -837,6 +837,15 @@ def main():
     prev = L.load_json(desk_path, {})
     runs = L.load_json(runs_path, [])
     STATE.update(L.load_json(STATE_PATH, {}))
+    if os.environ.get("KAIROS_CATCHUP") == "1":
+        # reserverun: alleen draaien als de geplande run van een half uur eerder niet is doorgekomen
+        try:
+            age = (NOW - datetime.fromisoformat(str(prev.get("asof")).replace("Z", "+00:00"))).total_seconds() / 60
+        except ValueError:
+            age = 9999
+        if age < 45:
+            log(f"Reserverun niet nodig: de laatste desk is {age:.0f} minuten oud.")
+            return
 
     # ---- gegevens ophalen (tegelijk waar het kan)
     with ThreadPoolExecutor(3) as ex:
