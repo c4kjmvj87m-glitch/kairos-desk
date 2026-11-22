@@ -1028,18 +1028,39 @@ def step2_prompt(pack, assets, session):
           "Supply & demand-logica: een short-idee hoort bij een supply-zone BOVEN de koers, na een sweep van de highs boven die zone en een break naar beneden. "
           "Een long-idee hoort bij een demand-zone ONDER de koers, na een sweep van de lows eronder en een break omhoog.",
           "Velden per markt:",
-          "- call: één zin met de bias en de zone die ertoe doet, bijvoorbeeld 'Licht bearish zolang 3.657 (supply) houdt; kopers pas weer aan zet boven 3.700.' Geen order met entry en target.",
+          "- call: begint met het label van die markt hierboven (bijvoorbeeld 'Neutraal' of 'Licht bearish'), dan de zone die ertoe doet, "
+          "bijvoorbeeld 'Licht bearish zolang 3.657 (supply) houdt; pas boven 3.700 nemen kopers het over.' Boven een supply-zone nemen kopers het over, "
+          "onder een demand-zone verkopers. Geen order met entry en target.",
           "- thesis: waarom, met de twee of drie zwaarste factoren en hun richting zoals in de factorregels.",
           "- flip: wat de bias laat omslaan (een level of een event).",
           "- risk: het grootste risico voor deze bias (een cijfer, event of level). Geen advies over positiegrootte of stop-loss.",
           "- playbook: het S&D-plan met de levels hierboven: welke zone voorrang heeft, wachten op sweep en market-structure break, "
           "killzones Londen 08:00-11:00 en New York 13:00-16:00 Brusselse tijd, en wanneer je aan de kant blijft. Geen garanties.",
           "- moveNote: alleen als de beweging van vandaag minstens 0,25% tegen een bias van ±15 of meer ingaat, anders null.",
+          "- headline: één zin over wat de markt nu drijft, in gewoon Nederlands, zonder labels zoals bullish of bearish.",
           'JSON-vorm: {"headline":"max 140 tekens","summary":["3 zinnen van max 130 tekens"],"regime":{"label":"max 40 tekens","tone":-1,"text":"max 240 tekens"},'
           '"assets":{"XAUUSD":{"call":"max 120","thesis":"max 320","flip":"max 160","risk":"max 140","playbook":"max 260","moveNote":null},'
           '"US500":{"call":"","thesis":"","flip":"","risk":"","playbook":"","moveNote":null},"US100":{"call":"","thesis":"","flip":"","risk":"","playbook":"","moveNote":null}},'
           '"chatter":"max 200 tekens: waar traders en media nu op letten","calNotes":[{"id":"e0","note":"max 80 tekens"}]}']
     return "\n".join(L)
+
+
+LABEL_RE = re.compile(r"^\s*(licht\s+bullish|licht\s+bearish|bullish|bearish|neutraal)\b[\s:,;.\-–]*", re.I)
+
+
+def fix_texts(a):
+    """Vangnet voor de AI-tekst: het label in de call moet het berekende label zijn, en een
+    moveNote mag alleen bestaan als de koers van vandaag echt tegen een duidelijke bias ingaat."""
+    lab = label(a["score"])
+    call = a.get("call")
+    if isinstance(call, str) and call:
+        m = LABEL_RE.match(call)
+        rest = call[m.end():] if m else call
+        a["call"] = f"{lab}: {rest[:1].lower() + rest[1:]}" if not m else f"{lab} {rest}" if rest[:1].islower() else f"{lab}: {rest}"
+    cp = a.get("chgPct")
+    against = cp is not None and abs(a["score"]) >= 15 and abs(cp) >= 0.25 and (cp > 0) != (a["score"] > 0)
+    if not against:
+        a.pop("moveNote", None)
 
 
 def fallback_text(assets, cal):
@@ -1162,6 +1183,7 @@ def main():
                 v = t.get(k)
                 if isinstance(v, str) and v.strip():
                     a[k] = v.strip()[:lim]
+            fix_texts(a)
     headline = (texts or {}).get("headline") or fb["headline"]
     summary = [str(x)[:160] for x in ((texts or {}).get("summary") or [])][:3]
     regime = (texts or {}).get("regime") if isinstance((texts or {}).get("regime"), dict) else None
