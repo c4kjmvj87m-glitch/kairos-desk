@@ -12,6 +12,7 @@ Lukt geen van beide, dan draait de desk op de rekenregels alleen.
 from __future__ import annotations
 
 import csv
+import gzip
 import html
 import io
 import json
@@ -99,20 +100,70 @@ def fetch(url, headers=None, body=None, timeout=25, tries=2):
     raise RuntimeError(f"{urllib.parse.urlsplit(url).netloc}: {err}")
 
 
+API_UA = "kairos-desk/2.0 (github-actions; python-urllib)"
+
+
+class _ApiRedirect(urllib.request.HTTPRedirectHandler):
+    """Een API-aanroep die wordt doorgestuurd is bijna altijd een fout (bv. naar een loginpagina): maak dat zichtbaar."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if req.get_method() != "GET":
+            raise urllib.error.HTTPError(req.full_url, code, f"doorgestuurd naar {newurl}", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_API = urllib.request.build_opener(_ApiRedirect)
+
+
+def api_json(url, headers=None, payload=None, timeout=180, tries=2):
+    """JSON-API zonder browser-UA. Bij een fout staat in de melding wat er wel terugkwam."""
+    h = {"User-Agent": API_UA, "Accept": "application/json"}
+    if payload is not None:
+        h["Content-Type"] = "application/json"
+    h.update(headers or {})
+    body = None if payload is None else json.dumps(payload).encode()
+    err = None
+    for i in range(tries):
+        try:
+            req = urllib.request.Request(url, data=body, headers=h, method="POST" if body is not None else "GET")
+            with _API.open(req, timeout=timeout) as r:
+                raw = r.read()
+                if (r.headers.get("Content-Encoding") or "").lower() == "gzip":
+                    raw = gzip.decompress(raw)
+                txt = raw.decode("utf-8", "replace")
+                try:
+                    return json.loads(txt)
+                except ValueError:
+                    final = r.geturl()
+                    err = (f"HTTP {r.status} {r.headers.get('Content-Type', '?')}" + (f" via {final}" if final != url else "")
+                           + f", {len(raw)} bytes, geen JSON: {txt[:160]!r}")
+        except urllib.error.HTTPError as e:
+            try:
+                detail = e.read().decode("utf-8", "replace")[:300]
+            except Exception:
+                detail = ""
+            err = f"HTTP {e.code} {e.reason} {detail}".strip()
+            if e.code in (400, 401, 403, 404, 413, 422) or 300 <= e.code < 400:
+                break
+        except Exception as e:
+            err = f"{type(e).__name__}: {e}"
+        time.sleep(2 * (i + 1))
+    raise RuntimeError(f"{urllib.parse.urlsplit(url).netloc}: {err}")
+
+
 # ---------------------------------------------------------------- prices
-def _series(bars, px, px_at, src, sym, tz):
+def _series(bars, px, px_at, src, sym, tz, max_jump=0.25):
     uniq = {}
     for b in bars:
         uniq[b["d"]] = b
     bars = [uniq[k] for k in sorted(uniq)]
     if not bars:
         raise RuntimeError(f"{sym}: geen koersdata")
-    if px is None or px <= 0 or abs(px / bars[-1]["c"] - 1) > 0.25:
+    if px is None or px <= 0 or abs(px / bars[-1]["c"] - 1) > max_jump:
         px, px_at = bars[-1]["c"], None  # ongeloofwaardige quote: val terug op de laatste dagkoers
     day = px_at.astimezone(tz).date() if px_at else bars[-1]["d"]
     prior = [b for b in bars if b["d"] < day]
     today = next((b for b in bars if b["d"] == day), None)
-    if prior and abs(px / prior[-1]["c"] - 1) > 0.25:
+    if prior and abs(px / prior[-1]["c"] - 1) > max_jump:
         raise RuntimeError(f"{sym}: onwaarschijnlijke koerssprong, bron overgeslagen")
     return {
         "sym": sym, "src": src, "px": float(px), "at": px_at,
@@ -123,7 +174,7 @@ def _series(bars, px, px_at, src, sym, tz):
     }
 
 
-def yahoo(sym):
+def yahoo(sym, max_jump=0.25):
     q = urllib.parse.quote(sym, safe="")
     j, last = None, None
     for host in ("query1", "query2"):
@@ -147,10 +198,10 @@ def yahoo(sym):
             continue
         bars.append({"d": datetime.fromtimestamp(t, tz).date(), "o": o if o is not None else c, "h": hi, "l": lo, "c": c})
     pt = m.get("regularMarketTime")
-    return _series(bars, m.get("regularMarketPrice"), datetime.fromtimestamp(pt, UTC) if pt else None, "Yahoo Finance", sym, tz)
+    return _series(bars, m.get("regularMarketPrice"), datetime.fromtimestamp(pt, UTC) if pt else None, "Yahoo Finance", sym, tz, max_jump)
 
 
-def stooq(sym):
+def stooq(sym, max_jump=0.25):
     d1 = (NOW - timedelta(days=430)).strftime("%Y%m%d")
     d2 = (NOW + timedelta(days=2)).strftime("%Y%m%d")
     txt = fetch(f"https://stooq.com/q/d/l/?s={urllib.parse.quote(sym)}&d1={d1}&d2={d2}&i=d")
@@ -170,7 +221,7 @@ def stooq(sym):
         at = datetime.fromisoformat(f"{q['Date']}T{q['Time']}").replace(tzinfo=tz)
     except Exception:
         pass
-    return _series(bars, px, at, "Stooq", sym, tz)
+    return _series(bars, px, at, "Stooq", sym, tz, max_jump)
 
 
 def _scale(s, f):
@@ -184,19 +235,19 @@ def _scale(s, f):
 
 
 INSTR = {
-    "XAUUSD": {"name": "Goud", "dp": 2, "src": [("stooq", "xauusd", "spot"), ("yahoo", "GC=F", "goud-future")]},
+    "XAUUSD": {"name": "Goud", "dp": 2, "src": [("stooq", "xauusd", "spot"), ("yahoo", "XAUUSD=X", "spot"), ("yahoo", "GC=F", "goud-future")]},
     "US500": {"name": "S&P 500", "dp": 1, "src": [("yahoo", "^GSPC", "index"), ("stooq", "^spx", "index")]},
     "US100": {"name": "Nasdaq 100", "dp": 1, "src": [("yahoo", "^NDX", "index"), ("stooq", "^ndx", "index")]},
     "ES": {"name": "S&P-future", "dp": 1, "src": [("yahoo", "ES=F", "")]},
     "NQ": {"name": "Nasdaq-future", "dp": 1, "src": [("yahoo", "NQ=F", "")]},
     "DXY": {"name": "Dollar-index", "dp": 2, "src": [("yahoo", "DX-Y.NYB", ""), ("stooq", "dx.f", "")]},
     "US10Y": {"name": "US 10j rente", "dp": 3, "src": [("yahoo", "^TNX", ""), ("stooq", "10usy.b", "")]},
-    "VIX": {"name": "Volatiliteit", "dp": 2, "src": [("yahoo", "^VIX", "")]},
+    "VIX": {"name": "Volatiliteit", "dp": 2, "jump": 1.5, "src": [("yahoo", "^VIX", "")]},
     "WTI": {"name": "Olie (WTI)", "dp": 2, "src": [("yahoo", "CL=F", ""), ("stooq", "cl.f", "")]},
     "BRENT": {"name": "Olie (Brent)", "dp": 2, "src": [("yahoo", "BZ=F", ""), ("stooq", "cb.f", "")]},
     "XAGUSD": {"name": "Zilver", "dp": 2, "src": [("stooq", "xagusd", ""), ("yahoo", "SI=F", "")]},
     "US30": {"name": "Dow Jones", "dp": 0, "src": [("yahoo", "^DJI", ""), ("stooq", "^dji", "")]},
-    "BTCUSD": {"name": "Bitcoin", "dp": 0, "src": [("yahoo", "BTC-USD", ""), ("stooq", "btcusd", "")]},
+    "BTCUSD": {"name": "Bitcoin", "dp": 0, "jump": 0.5, "src": [("yahoo", "BTC-USD", ""), ("stooq", "btcusd", "")]},
 }
 PRIMARY = ["XAUUSD", "US500", "US100"]
 
@@ -207,7 +258,8 @@ def load_series():
         errs = []
         for kind, sym, note in spec["src"]:
             try:
-                s = stooq(sym) if kind == "stooq" else yahoo(sym)
+                mj = spec.get("jump", 0.25)
+                s = stooq(sym, mj) if kind == "stooq" else yahoo(sym, mj)
                 if k == "US10Y" and s["px"] > 20:  # sommige bronnen geven de rente x10
                     _scale(s, 0.1)
                 s["note"] = note
@@ -216,7 +268,7 @@ def load_series():
             except Exception as e:
                 errs.append(str(e)[:160])
         if k in out:
-            log(f"[ok] {k} {out[k]['px']:.4f} via {out[k]['src']} {out[k]['sym']}")
+            log(f"[ok] {k} {out[k]['px']:.4f} via {out[k]['src']} {out[k]['sym']}" + (f"  (eerder mislukt: {' | '.join(errs)})" if errs else ""))
         else:
             MISSING.append(f"koers {k}")
             log(f"[!] {k}: " + " | ".join(errs))
@@ -245,7 +297,7 @@ def sma(vals, n):
 
 
 def fred(series_id):
-    txt = fetch(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}")
+    txt = fetch(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}", timeout=45)
     vals = []
     for row in list(csv.reader(io.StringIO(txt)))[1:]:
         if len(row) > 1 and row[1] not in (".", ""):
@@ -278,6 +330,12 @@ NL_EV = [
     (r"^GDP q/q$", "BBP k/k"), (r"^JOLTS Job Openings$", "JOLTS-vacatures"), (r"^Bank Holiday$", "Feestdag"),
     (r"^Main Refinancing Rate$", "ECB-rentebesluit"), (r"^Official Bank Rate$", "BoE-rentebesluit"), (r"^BOJ Policy Rate$", "BoJ-rentebesluit"),
     (r"^Durable Goods Orders m/m$", "Duurzame goederen m/m"), (r"^Core Durable Goods Orders m/m$", "Kern duurzame goederen m/m"),
+    (r"^Flash Manufacturing PMI$", "Flash industrie-PMI"), (r"^Flash Services PMI$", "Flash diensten-PMI"),
+    (r"^CB Consumer Confidence$", "Consumentenvertrouwen (CB)"), (r"^Pending Home Sales m/m$", "Lopende woningverkopen m/m"),
+    (r"^New Home Sales$", "Nieuwe woningverkopen"), (r"^Existing Home Sales$", "Bestaande woningverkopen"),
+    (r"^Empire State Manufacturing Index$", "Empire State industrie"), (r"^Philly Fed Manufacturing Index$", "Philly Fed industrie"),
+    (r"^Personal Spending m/m$", "Consumentenbestedingen m/m"), (r"^Personal Income m/m$", "Persoonlijk inkomen m/m"),
+    (r"^Trade Balance$", "Handelsbalans"), (r"^Building Permits$", "Bouwvergunningen"), (r"^Housing Starts$", "Woningbouw"),
 ]
 TIER1 = re.compile(r"\b(CPI|Non-Farm Employment Change|Federal Funds Rate|FOMC Statement|FOMC Press Conference|PCE Price Index|Fed Chair)\b", re.I)
 TIER2 = re.compile(r"\b(PPI|Retail Sales|ISM|GDP|JOLTS|Unemployment Claims|FOMC Meeting Minutes|Unemployment Rate|Average Hourly Earnings|UoM)\b", re.I)
@@ -309,7 +367,9 @@ def calendar():
         except Exception as e:
             if "thisweek" in u:
                 MISSING.append("kalender")
-            log("[!] kalender", u, e)
+                log("[!] kalender", u, e)
+            else:
+                log("[i] kalender volgende week nog niet gepubliceerd")
     start = datetime.now(BXL).replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=5)
     seen, ev = set(), []
@@ -326,7 +386,7 @@ def calendar():
         if c == "USD":
             if imp < 2 and impact != "Holiday":
                 continue
-        elif imp < 3:
+        elif imp < 3 or c not in ("EUR", "GBP", "JPY", "CNY"):
             continue
         title = e.get("title", "")
         key = (title, c, iso(t))
@@ -366,7 +426,7 @@ def event_penalty(cal):
 # ---------------------------------------------------------------- news & sentiment
 GN = "https://news.google.com/rss/search?q={}&hl=en-US&gl=US&ceid=US:en"
 NEWS_Q = ["gold price when:1d", "stock market today when:1d", "Federal Reserve rate when:2d",
-          "Nasdaq S&P 500 futures when:1d", "FedWatch probability when:4d"]
+          "Nasdaq S&P 500 futures when:1d", "FedWatch probability when:4d", "XAUUSD when:1d"]
 
 
 def rss_items(xml_text, default_src=""):
@@ -396,10 +456,6 @@ def news():
             items += rss_items(fetch(GN.format(urllib.parse.quote(q))))
         except Exception as e:
             log("[!] nieuws", q, e)
-    try:
-        items += rss_items(fetch("https://www.fxstreet.com/rss/news"), "FXStreet")
-    except Exception as e:
-        log("[!] fxstreet", e)
     cutoff = NOW - timedelta(hours=40)
     seen, out = set(), []
     for it in sorted(items, key=lambda x: x["t"] or NOW - timedelta(days=9), reverse=True):
@@ -566,17 +622,22 @@ def levels(s, dp):
             cand += [(max(b["h"] for b in wb), "vorige week high"), (min(b["l"] for b in wb), "vorige week low")]
         l20 = bars[-20:]
         cand += [(max(b["h"] for b in l20), "hoogste punt 20 dagen"), (min(b["l"] for b in l20), "laagste punt 20 dagen")]
+    if s.get("hi") and s.get("lo"):
+        cand += [(s["hi"], "high van de laatste sessie"), (s["lo"], "low van de laatste sessie")]
     closes = [b["c"] for b in bars] + [p]
     for n in (50, 200):
         v = sma(closes, n)
         if v:
             cand.append((v, f"{n}-daags gemiddelde", "pivot"))
+    step = 100 if p < 10000 else 500
+    below = math.floor(p / step) * step
+    cand += [(below + step, "rond getal", "pivot"), (below, "rond getal", "pivot")]
     out = []
     for c in cand:
         v, note = c[0], c[1]
-        if abs(v / p - 1) > 0.06:
+        if abs(v / p - 1) > 0.08:
             continue
-        if any(abs(v / o["p"] - 1) < 0.0012 for o in out):
+        if any(abs(v / o["p"] - 1) < 0.0015 for o in out) or abs(v / p - 1) < 0.0005:
             continue
         kind = c[2] if len(c) > 2 else ("supply" if v >= p else "demand")
         out.append({"p": round(v, dp), "kind": kind, "note": note, "src": s["src"]})
@@ -597,11 +658,10 @@ def parse_json(text):
 
 
 def claude_call(system, user, key, max_tokens):
-    body = json.dumps({"model": os.environ.get("KAIROS_CLAUDE_MODEL") or "claude-haiku-5-5", "max_tokens": max_tokens,
-                       "system": system, "messages": [{"role": "user", "content": user}]}).encode()
-    r = json.loads(fetch("https://api.anthropic.com/v1/messages",
-                         headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                         body=body, timeout=180, tries=2))
+    payload = {"model": os.environ.get("KAIROS_CLAUDE_MODEL") or "claude-haiku-5-5", "max_tokens": max_tokens,
+               "system": system, "messages": [{"role": "user", "content": user}]}
+    r = api_json("https://api.anthropic.com/v1/messages", headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
+                 payload=payload)
     return parse_json("".join(b.get("text", "") for b in r.get("content", []) if b.get("type") == "text"))
 
 
@@ -613,7 +673,8 @@ def gh_models(tok):
     want = os.environ.get("KAIROS_MODEL", "").strip()
     avail = None
     try:
-        cat = json.loads(fetch("https://models.github.ai/catalog/models", headers={**GH_HEADERS, "Authorization": f"Bearer {tok}"}))
+        cat = api_json("https://models.github.ai/catalog/models", headers={**GH_HEADERS, "Authorization": f"Bearer {tok}"},
+                       timeout=30)
         avail = {m.get("id") for m in cat if isinstance(m, dict)}
     except Exception as e:
         log("[!] modelcatalogus", e)
@@ -632,9 +693,8 @@ def gh_call(system, user, tok, model, max_tokens):
     else:
         payload["max_tokens"] = max_tokens
         payload["temperature"] = 0.3
-    r = json.loads(fetch("https://models.github.ai/inference/chat/completions",
-                         headers={**GH_HEADERS, "Authorization": f"Bearer {tok}", "Content-Type": "application/json"},
-                         body=json.dumps(payload).encode(), timeout=180, tries=2))
+    r = api_json("https://models.github.ai/inference/chat/completions",
+                 headers={**GH_HEADERS, "Authorization": f"Bearer {tok}"}, payload=payload)
     return parse_json(r["choices"][0]["message"]["content"])
 
 
@@ -744,7 +804,7 @@ def step2_prompt(pack, assets, session):
 
 
 def fallback_text(assets, cal):
-    nxt = next((x for x in cal if x["imp"] >= 3 and x["t"] > iso(NOW)), None)
+    nxt = next((x for x in cal if x["imp"] >= 3 and x["cty"] == "US" and x["t"] > iso(NOW)), None)
     for a in assets:
         lab = label(a["score"])
         pos = [f["label"].lower() for f in a["factors"] if f["d"] > 0]
