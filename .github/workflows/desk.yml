@@ -55,9 +55,18 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: main
-      - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v5
         with:
           path: .
+      - name: Wachten tot GitHub het artifact ziet
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 36); do
+            n=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts?name=github-pages" --jq '.total_count' 2>/dev/null || echo 0)
+            if [ "${n:-0}" -ge 1 ]; then echo "Artifact zichtbaar na $((i * 5)) s"; sleep 5; exit 0; fi
+            sleep 5
+          done
+          echo "Artifact na 3 minuten nog niet zichtbaar; toch proberen"
       - id: deployment
         uses: actions/deploy-pages@v5
