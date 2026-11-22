@@ -5,9 +5,11 @@ Haalt koersen, kalender, nieuws en sentiment op, berekent het factormodel, laat 
 AI-model het kwalitatieve oordeel en de Nederlandse tekst schrijven en schrijft
 data/desk.json en data/runs.json. Draait in GitHub Actions; alleen de standaardbibliotheek.
 
-AI: met een ANTHROPIC_API_KEY gebruikt hij Claude Haiku 5.5 (betalen per gebruik),
-anders GitHub Models via de ingebouwde GITHUB_TOKEN (gratis binnen de limieten).
-Lukt geen van beide, dan draait de desk op de rekenregels alleen.
+AI: de eerste sleutel die als GitHub-secret bestaat, in deze volgorde:
+  ANTHROPIC_API_KEY  Claude Haiku 5.5 (betalen per gebruik, enkele centen per maand)
+  GEMINI_API_KEY     Google Gemini (gratis binnen de limieten)
+  GROQ_API_KEY       Groq (gratis binnen de limieten)
+Lukt geen enkele, dan draait de desk op de rekenregels alleen.
 """
 from __future__ import annotations
 
@@ -39,6 +41,7 @@ NOW = datetime.now(UTC)
 MISSING: list[str] = []
 NOTES: list[str] = []
 ENGINE = {"ai": "geen (alleen rekenregels)"}
+REAL_SRC = [None]
 
 SESSION_NL = {"london": "ochtend, voor Londen", "ny": "middag, voor New York", "close": "avond, na de slot van Wall Street"}
 DOW = ["ma", "di", "wo", "do", "vr", "za", "zo"]
@@ -96,7 +99,8 @@ def fetch(url, headers=None, body=None, timeout=25, tries=2):
                 break
         except Exception as e:  # timeouts, DNS, reset
             err = f"{type(e).__name__}: {e}"
-        time.sleep(1.5 * (i + 1))
+        if i < tries - 1:
+            time.sleep(1.5 * (i + 1))
     raise RuntimeError(f"{urllib.parse.urlsplit(url).netloc}: {err}")
 
 
@@ -142,12 +146,35 @@ def api_json(url, headers=None, payload=None, timeout=180, tries=2):
             except Exception:
                 detail = ""
             err = f"HTTP {e.code} {e.reason} {detail}".strip()
-            if e.code in (400, 401, 403, 404, 413, 422) or 300 <= e.code < 400:
+            if e.code == 429 and i < tries - 1:
+                wait = _retry_after(e.headers, detail)
+                log(f"[i] {urllib.parse.urlsplit(url).netloc}: limiet bereikt, {wait:.0f}s wachten")
+                time.sleep(wait)
+                continue
+            if e.code in (400, 401, 403, 404, 413, 422, 429) or 300 <= e.code < 400:
                 break
         except Exception as e:
             err = f"{type(e).__name__}: {e}"
-        time.sleep(2 * (i + 1))
+        if i < tries - 1:
+            time.sleep(2 * (i + 1))
     raise RuntimeError(f"{urllib.parse.urlsplit(url).netloc}: {err}")
+
+
+def _retry_after(headers, detail=""):
+    """Hoe lang wachten na een 429: Retry-After, Groq-resetheader of Gemini retryDelay; tussen 3 en 70 seconden."""
+    cand = [(headers or {}).get("retry-after"), (headers or {}).get("x-ratelimit-reset-tokens"),
+            (headers or {}).get("x-ratelimit-reset-requests")]
+    m = re.search(r'"retryDelay"\s*:\s*"([\d.]+)s"', detail or "")
+    if m:
+        cand.append(m.group(1))
+    for c in cand:
+        if not c:
+            continue
+        mm = re.fullmatch(r"\s*(?:(\d+)m)?\s*([\d.]+)?s?\s*", str(c))
+        if mm and (mm.group(1) or mm.group(2)):
+            sec = int(mm.group(1) or 0) * 60 + float(mm.group(2) or 0)
+            return max(3.0, min(70.0, sec + 1))
+    return 20.0
 
 
 # ---------------------------------------------------------------- prices
@@ -235,7 +262,7 @@ def _scale(s, f):
 
 
 INSTR = {
-    "XAUUSD": {"name": "Goud", "dp": 2, "src": [("stooq", "xauusd", "spot"), ("yahoo", "XAUUSD=X", "spot"), ("yahoo", "GC=F", "goud-future")]},
+    "XAUUSD": {"name": "Goud", "dp": 2, "spot": "XAU", "src": [("stooq", "xauusd", "spot"), ("yahoo", "GC=F", "goud-future")]},
     "US500": {"name": "S&P 500", "dp": 1, "src": [("yahoo", "^GSPC", "index"), ("stooq", "^spx", "index")]},
     "US100": {"name": "Nasdaq 100", "dp": 1, "src": [("yahoo", "^NDX", "index"), ("stooq", "^ndx", "index")]},
     "ES": {"name": "S&P-future", "dp": 1, "src": [("yahoo", "ES=F", "")]},
@@ -245,7 +272,7 @@ INSTR = {
     "VIX": {"name": "Volatiliteit", "dp": 2, "jump": 1.5, "src": [("yahoo", "^VIX", "")]},
     "WTI": {"name": "Olie (WTI)", "dp": 2, "src": [("yahoo", "CL=F", ""), ("stooq", "cl.f", "")]},
     "BRENT": {"name": "Olie (Brent)", "dp": 2, "src": [("yahoo", "BZ=F", ""), ("stooq", "cb.f", "")]},
-    "XAGUSD": {"name": "Zilver", "dp": 2, "src": [("stooq", "xagusd", ""), ("yahoo", "SI=F", "")]},
+    "XAGUSD": {"name": "Zilver", "dp": 2, "spot": "XAG", "src": [("stooq", "xagusd", ""), ("yahoo", "SI=F", "")]},
     "US30": {"name": "Dow Jones", "dp": 0, "src": [("yahoo", "^DJI", ""), ("stooq", "^dji", "")]},
     "BTCUSD": {"name": "Bitcoin", "dp": 0, "jump": 0.5, "src": [("yahoo", "BTC-USD", ""), ("stooq", "btcusd", "")]},
 }
@@ -267,12 +294,76 @@ def load_series():
                 break
             except Exception as e:
                 errs.append(str(e)[:160])
+        if k in out and spec.get("spot") and out[k]["sym"].endswith("=F"):
+            to_spot(out[k], spec["spot"])
         if k in out:
             log(f"[ok] {k} {out[k]['px']:.4f} via {out[k]['src']} {out[k]['sym']}" + (f"  (eerder mislukt: {' | '.join(errs)})" if errs else ""))
         else:
             MISSING.append(f"koers {k}")
             log(f"[!] {k}: " + " | ".join(errs))
     return out
+
+
+def spot_quote(metal):
+    """Live spotprijs (midden van bied en laat) in USD voor XAU of XAG."""
+    errs = []
+    try:
+        j = api_json(f"https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/{metal}/USD",
+                     headers={"User-Agent": UA}, timeout=20, tries=2)
+        best = None
+        for feed in j if isinstance(j, list) else []:
+            for pr in feed.get("spreadProfilePrices") or []:
+                b, a = pr.get("bid"), pr.get("ask")
+                if isinstance(b, (int, float)) and isinstance(a, (int, float)) and 0 < b <= a:
+                    if best is None or a - b < best[1] - best[0]:
+                        best = (b, a, feed.get("ts"))
+        if best:
+            at = datetime.fromtimestamp(best[2] / 1000, UTC) if isinstance(best[2], (int, float)) else NOW
+            return (best[0] + best[1]) / 2, at, "Swissquote"
+        errs.append("Swissquote: geen prijs in antwoord")
+    except Exception as e:
+        errs.append(f"Swissquote: {e}"[:160])
+    try:
+        j = api_json(f"https://api.gold-api.com/price/{metal}", headers={"User-Agent": UA}, timeout=20, tries=2)
+        at = NOW
+        try:
+            at = datetime.fromisoformat(str(j.get("updatedAt")).replace("Z", "+00:00"))
+        except Exception:
+            pass
+        return float(j["price"]), at, "gold-api.com"
+    except Exception as e:
+        errs.append(f"gold-api.com: {e}"[:160])
+    raise RuntimeError(" | ".join(errs))
+
+
+def to_spot(s, metal):
+    """Zet een future-reeks om naar spot: koershistorie van de future, verschoven met het actuele verschil (basis)."""
+    try:
+        px, at, src = spot_quote(metal)
+    except Exception as e:
+        log(f"[!] spot {metal}: {e}")
+        return False
+    if not 0.96 < px / s["px"] < 1.04:
+        log(f"[!] spot {metal} {px:.2f} wijkt te veel af van de future {s['px']:.2f}; de future blijft staan")
+        return False
+    basis = s["px"] - px
+    for b in s["bars"]:
+        for k in ("o", "h", "l", "c"):
+            if isinstance(b.get(k), (int, float)):
+                b[k] -= basis
+    for k in ("prev", "hi", "lo"):
+        if s.get(k) is not None:
+            s[k] -= basis
+    s["px"] = px
+    if s.get("hi") is not None:
+        s["hi"], s["lo"] = max(s["hi"], px), min(s["lo"], px)
+    s["at"] = at
+    s["src"] = f"{src} spot"
+    s["sym"] = f"{metal}/USD"
+    s["note"] = "niveaus via de COMEX-future"
+    s["basis"] = round(basis, 2)
+    log(f"[ok] {metal} spot {px:.2f} via {src}; verschil met de future {basis:+.2f}")
+    return True
 
 
 def chg(s):
@@ -296,8 +387,28 @@ def sma(vals, n):
     return sum(vals[-n:]) / n if len(vals) >= n else None
 
 
+def treasury_real10():
+    """Reële 10-jaarsrente (TIPS) van het Amerikaanse ministerie van Financiën."""
+    vals = []
+    for yr in (NOW.year, NOW.year - 1):
+        txt = fetch("https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/"
+                    f"{yr}/all?type=daily_treasury_real_yield_curve&field_tdr_date_value={yr}&page&_format=csv", timeout=30)
+        for row in csv.DictReader(io.StringIO(txt.lstrip("\ufeff"))):
+            try:
+                m, d, y = (row.get("Date") or "").strip().split("/")
+                vals.append((f"{int(y):04d}-{int(m):02d}-{int(d):02d}", float((row.get("10 YR") or "").strip())))
+            except ValueError:
+                pass
+        if len(vals) >= 10:
+            break
+    vals.sort()
+    if len(vals) < 6:
+        raise RuntimeError(f"te weinig rentedata ({len(vals)} dagen)")
+    return vals[-30:]
+
+
 def fred(series_id):
-    txt = fetch(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}", timeout=45)
+    txt = fetch(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}", timeout=20, tries=1)
     vals = []
     for row in list(csv.reader(io.StringIO(txt)))[1:]:
         if len(row) > 1 and row[1] not in (".", ""):
@@ -542,7 +653,7 @@ def f_rates(y10, real, gold):
         lvl = real[-1][1]
         ch = (real[-1][1] - real[-6][1]) * 100
         what = f"Reële 10-jaarsrente (TIPS) {nl(lvl, 2)}%, {sgn(ch, 0)} bp in 5 dagen"
-        src = f"FRED DFII10, {real[-1][0]}"
+        src = f"{REAL_SRC[0] or 'FRED DFII10'}, {real[-1][0]}"
     elif y10 and len(y10["bars"]) >= 5:
         lvl = y10["px"]
         ch = (lvl - y10["bars"][-5]["c"]) * 100
@@ -631,7 +742,8 @@ def levels(s, dp):
             cand.append((v, f"{n}-daags gemiddelde", "pivot"))
     step = 100 if p < 10000 else 500
     below = math.floor(p / step) * step
-    cand += [(below + step, "rond getal", "pivot"), (below, "rond getal", "pivot")]
+    cand += [(below + step, "rond getal", "pivot"), (below, "rond getal", "pivot"),
+             (below + 2 * step, "rond getal", "pivot"), (below - step, "rond getal", "pivot")]
     out = []
     for c in cand:
         v, note = c[0], c[1]
@@ -658,44 +770,108 @@ def parse_json(text):
 
 
 def claude_call(system, user, key, max_tokens):
-    payload = {"model": os.environ.get("KAIROS_CLAUDE_MODEL") or "claude-haiku-5-5", "max_tokens": max_tokens,
+    payload = {"model": os.environ.get("KAIROS_CLAUDE_MODEL") or "claude-haiku-5-5", "max_tokens": max(8000, max_tokens * 3),
                "system": system, "messages": [{"role": "user", "content": user}]}
     r = api_json("https://api.anthropic.com/v1/messages", headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
-                 payload=payload)
-    return parse_json("".join(b.get("text", "") for b in r.get("content", []) if b.get("type") == "text"))
+                 payload=payload, tries=3)
+    txt = "".join(b.get("text", "") for b in r.get("content", []) if b.get("type") == "text")
+    if not txt.strip():
+        raise ValueError(f"leeg antwoord (stop_reason {r.get('stop_reason')})")
+    return parse_json(txt)
 
 
-GH_PREF = ["openai/gpt-4.1", "openai/gpt-4o", "openai/gpt-5-mini", "openai/gpt-4.1-mini", "openai/gpt-4o-mini"]
-GH_HEADERS = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+GEM = "https://generativelanguage.googleapis.com/v1beta"
+GEM_PREF = [r"gemini-flash-latest", r"gemini-\d+(?:\.\d+)?-flash", r"gemini-flash-lite-latest", r"gemini-\d+(?:\.\d+)?-flash-lite"]
+GROQ = "https://api.groq.com/openai/v1"
+GROQ_PREF = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"]
+_MODELS = {}
 
 
-def gh_models(tok):
-    want = os.environ.get("KAIROS_MODEL", "").strip()
+def _version(name):
+    return [float(x) for x in re.findall(r"\d+(?:\.\d+)?", name)] or [0.0]
+
+
+def gemini_models(key):
+    if "gemini" in _MODELS:
+        return _MODELS["gemini"]
+    want = os.environ.get("KAIROS_GEMINI_MODEL", "").strip()
+    names = []
+    try:
+        j = api_json(f"{GEM}/models?pageSize=200", headers={"x-goog-api-key": key}, timeout=30)
+        names = [m["name"].split("/", 1)[-1] for m in j.get("models", [])
+                 if "generateContent" in (m.get("supportedGenerationMethods") or [])]
+    except Exception as e:
+        log("[!] Gemini-modellijst", e)
+    order = [want] if want else []
+    for pat in GEM_PREF:
+        hits = sorted((n for n in names if re.fullmatch(pat, n)), key=_version, reverse=True)
+        order += hits[:1]
+    if not names:
+        order += ["gemini-flash-latest", "gemini-flash-lite-latest"]
+    out = []
+    for m in order:
+        if m and m not in out:
+            out.append(m)
+    _MODELS["gemini"] = out[:3]
+    return _MODELS["gemini"]
+
+
+def gemini_call(system, user, key, model, max_tokens):
+    payload = {"systemInstruction": {"parts": [{"text": system}]},
+               "contents": [{"role": "user", "parts": [{"text": user}]}],
+               "generationConfig": {"responseMimeType": "application/json", "temperature": 0.3,
+                                    "maxOutputTokens": max(8192, max_tokens * 4)}}
+    r = api_json(f"{GEM}/models/{model}:generateContent", headers={"x-goog-api-key": key}, payload=payload, tries=2)
+    c = (r.get("candidates") or [{}])[0]
+    txt = "".join(pt.get("text", "") for pt in (c.get("content") or {}).get("parts", []) if not pt.get("thought"))
+    if not txt.strip():
+        raise ValueError(f"leeg antwoord ({c.get('finishReason') or r.get('promptFeedback')})")
+    return parse_json(txt)
+
+
+def groq_models(key):
+    if "groq" in _MODELS:
+        return _MODELS["groq"]
+    want = os.environ.get("KAIROS_GROQ_MODEL", "").strip()
     avail = None
     try:
-        cat = api_json("https://models.github.ai/catalog/models", headers={**GH_HEADERS, "Authorization": f"Bearer {tok}"},
-                       timeout=30)
-        avail = {m.get("id") for m in cat if isinstance(m, dict)}
+        j = api_json(f"{GROQ}/models", headers={"Authorization": f"Bearer {key}"}, timeout=30)
+        avail = {m.get("id") for m in j.get("data", []) if m.get("active", True)}
     except Exception as e:
-        log("[!] modelcatalogus", e)
+        log("[!] Groq-modellijst", e)
     order = []
-    for m in ([want] if want else []) + GH_PREF:
+    for m in ([want] if want else []) + GROQ_PREF:
         if m and m not in order and (avail is None or m in avail):
             order.append(m)
-    return order[:3] or GH_PREF[:2]
+    if avail and len(order) < 2:  # nieuwe modelnamen: neem herkenbare grote tekstmodellen
+        extra = sorted((m for m in avail if re.search(r"gpt-oss|qwen|llama|kimi|deepseek", m)
+                        and not re.search(r"guard|whisper|tts|vision|8b|20b", m)), key=_version, reverse=True)
+        order += [m for m in extra if m not in order]
+    _MODELS["groq"] = order[:2]
+    return _MODELS["groq"]
 
 
-def gh_call(system, user, tok, model, max_tokens):
+def groq_call(system, user, key, model, max_tokens):
+    # gratis Groq: ongeveer 8.000 tokens per minuut, dus vraag niet meer dan er past
+    est = (len(system) + len(user)) / 3.0
     payload = {"model": model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+               "temperature": 0.3, "max_completion_tokens": int(max(1500, min(max_tokens + 1000, 7600 - est))),
                "response_format": {"type": "json_object"}}
-    if "gpt-5" in model or "/o" in model:
-        payload["max_completion_tokens"] = max_tokens
-    else:
-        payload["max_tokens"] = max_tokens
-        payload["temperature"] = 0.3
-    r = api_json("https://models.github.ai/inference/chat/completions",
-                 headers={**GH_HEADERS, "Authorization": f"Bearer {tok}"}, payload=payload)
-    return parse_json(r["choices"][0]["message"]["content"])
+    if "gpt-oss" in model:
+        payload["reasoning_effort"] = "low"
+    elif "qwen" in model:
+        payload["reasoning_format"] = "hidden"
+    try:
+        r = api_json(f"{GROQ}/chat/completions", headers={"Authorization": f"Bearer {key}"}, payload=payload, tries=3)
+    except RuntimeError as e:
+        if "HTTP 400" not in str(e):
+            raise
+        # sommige modellen weigeren JSON-modus of de denk-instellingen: probeer het kaal, parse_json vist de JSON er zelf uit
+        log(f"[i] Groq {model}: opnieuw zonder extra opties ({str(e)[:120]})")
+        for k in ("response_format", "reasoning_effort", "reasoning_format"):
+            payload.pop(k, None)
+        r = api_json(f"{GROQ}/chat/completions", headers={"Authorization": f"Bearer {key}"}, payload=payload, tries=3)
+    return parse_json(r["choices"][0]["message"].get("content") or "")
 
 
 def ai_json(system, user, max_tokens=3500):
@@ -708,16 +884,25 @@ def ai_json(system, user, max_tokens=3500):
             return out
         except Exception as e:
             errors.append(f"Claude: {e}")
-    tok = os.environ.get("GITHUB_TOKEN", "").strip()
-    if tok:
-        for model in gh_models(tok):
+    key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if key:
+        for model in gemini_models(key):
             try:
-                out = gh_call(system, user, tok, model, max_tokens)
-                ENGINE["ai"] = f"GitHub Models ({model})"
+                out = gemini_call(system, user, key, model, max_tokens)
+                ENGINE["ai"] = f"Google Gemini ({model})"
                 return out
             except Exception as e:
-                errors.append(f"{model}: {e}")
-    raise RuntimeError("; ".join(errors)[:500] or "geen AI-sleutel beschikbaar")
+                errors.append(f"Gemini {model}: {e}")
+    key = os.environ.get("GROQ_API_KEY", "").strip()
+    if key:
+        for model in groq_models(key):
+            try:
+                out = groq_call(system, user, key, model, max_tokens)
+                ENGINE["ai"] = f"Groq ({model})"
+                return out
+            except Exception as e:
+                errors.append(f"Groq {model}: {e}")
+    raise RuntimeError("; ".join(errors)[:600] or "geen AI-sleutel ingesteld (zie README)")
 
 
 SYSTEM = ("Je bent de macro-analist van KAIROS, een bias-desk voor een supply-and-demand daytrader in Brussel die XAUUSD (goud), "
@@ -831,12 +1016,17 @@ def main():
     if sum(1 for k in PRIMARY if k in S) < 2:
         log("[x] Te weinig koersen voor de hoofdmarkten; de vorige desk blijft staan.")
         sys.exit(1)
-    try:
-        real = fred("DFII10")
-        log(f"[ok] reële rente {real[-1] if real else '-'}")
-    except Exception as e:
-        real = None
-        log("[!] FRED", e)
+    real, REAL_SRC[0] = None, None
+    for name, getter in (("FRED DFII10", lambda: fred("DFII10")), ("US Treasury", treasury_real10)):
+        try:
+            real = getter()
+            if real and len(real) >= 6:
+                REAL_SRC[0] = name
+                log(f"[ok] reële rente {real[-1]} via {name}")
+                break
+            real = None
+        except Exception as e:
+            log(f"[!] reële rente via {name}: {e}")
     cal = calendar()
     heads = news()
     fg = fear_greed()
@@ -964,9 +1154,9 @@ def main():
         "assets": assets, "context": context, "calendar": calendar_out, "news": picked, "fed": fed,
         "sentiment": {"fg": fg, "chatter": (texts or {}).get("chatter"), "chatterSrc": "nieuwskoppen" if (texts or {}).get("chatter") else None},
         "sources": [
-            {"n": "Stooq (koersen)", "u": "https://stooq.com"}, {"n": "Yahoo Finance (koersen)", "u": "https://finance.yahoo.com"},
+            {"n": "Yahoo Finance (koersen)", "u": "https://finance.yahoo.com"}, {"n": "Swissquote (goud en zilver spot)", "u": "https://www.swissquote.com"},
             {"n": "ForexFactory (kalender)", "u": "https://www.forexfactory.com/calendar"}, {"n": "Google News (koppen)", "u": "https://news.google.com"},
-            {"n": "CNN Fear & Greed", "u": "https://edition.cnn.com/markets/fear-and-greed"}, {"n": "FRED reële rente", "u": "https://fred.stlouisfed.org/series/DFII10"},
+            {"n": "CNN Fear & Greed", "u": "https://edition.cnn.com/markets/fear-and-greed"}, {"n": "FRED / US Treasury (reële rente)", "u": "https://fred.stlouisfed.org/series/DFII10"},
         ] + [{"n": f"{n['src'] or 'Nieuws'}: {n['h'][:60]}", "u": n["url"]} for n in picked[:6] if n.get("url")],
         "health": {"missing": MISSING, "note": "; ".join(NOTES)[:240]},
     }

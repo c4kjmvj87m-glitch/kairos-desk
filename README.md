@@ -1,22 +1,36 @@
 # KAIROS Macro Desk
 
-Macro bias desk for XAUUSD, US500 and US100. Runs on GitHub, without a Claude subscription.
+Macro-bias-desk voor XAUUSD, US500 en US100. Draait gratis op GitHub, zonder Claude-abonnement.
 
-- **App:** https://c4kjmvj87m-glitch.github.io/kairos-desk/ (add it to your phone's home screen)
-- **Refresh:** the workflow *KAIROS desk-run* runs on weekdays at 07:46, 13:46 and 22:46 (Brussels time).
-- **Analysis:** GitHub Models (free within the limits). With an `ANTHROPIC_API_KEY` secret it uses Claude Haiku 5.5 instead (pay per use). If neither works, the desk runs on the calculation rules only.
+- **App:** https://c4kjmvj87m-glitch.github.io/kairos-desk/ (zet hem op het beginscherm van je telefoon)
+- **Verversen:** de workflow *KAIROS desk-run* draait op werkdagen om 07:46, 13:46 en 22:46 (Brusselse tijd).
+- **Koersen:** Yahoo Finance; goud en zilver als spotprijs via Swissquote (de niveaus komen uit de COMEX-future, omgerekend naar spot).
+- **Analyse:** een AI-model schrijft het oordeel en de uitleg. Daarvoor zet je één sleutel als GitHub-secret (zie hieronder). Zonder sleutel draait de desk op de rekenregels alleen.
 
-## Doing it yourself
+## AI aanzetten (één keer, 5 minuten)
 
-- **Refresh now:** Actions → *KAIROS desk-run* → *Run workflow*.
-- **Use Claude (optional):** Settings → Secrets and variables → Actions → *New repository secret*, name `ANTHROPIC_API_KEY`.
-- **Different free model (optional):** Settings → Secrets and variables → Actions → Variables → `KAIROS_MODEL`, for example `openai/gpt-4.1-mini`.
-- **Schedule paused?** GitHub can turn off scheduled workflows in a public project after 60 days without activity. Turn it back on under Actions.
+Kies één van deze drie. Zet de sleutel altijd alleen in GitHub, nooit in een chat of in een bestand.
 
-## Files
+| Secret-naam | Dienst | Kosten | Sleutel maken |
+|---|---|---|---|
+| `GROQ_API_KEY` | Groq (gpt-oss-120b) | gratis, geen creditcard | https://console.groq.com/keys |
+| `ANTHROPIC_API_KEY` | Claude Haiku 5.5 | minder dan € 0,50 per maand, vooraf tegoed kopen | https://platform.claude.com (API keys) |
+| `GEMINI_API_KEY` | Google Gemini | gratis zolang Google je project een gratis tier geeft | https://aistudio.google.com/apikey |
 
-- `index.html`: the app (also works offline with the last desk).
-- `engine/desk.py`: fetches the data, calculates the factor model and writes `data/desk.json` and `data/runs.json`.
-- `.github/workflows/`: the schedule (`desk.yml`) and publishing the app (`pages.yml`).
+Sleutel in GitHub zetten: **Settings → Secrets and variables → Actions → New repository secret**, vul de naam uit de tabel in, plak de sleutel bij *Secret* en klik *Add secret*.
 
-Not financial advice. Prices are snapshots and lag behind your broker.
+Heb je er meer dan één, dan gebruikt de desk eerst Claude, dan Gemini, dan Groq.
+
+## Zelf doen
+
+- **Nu verversen:** Actions → *KAIROS desk-run* → *Run workflow*.
+- **Ander model (optioneel):** Settings → Secrets and variables → Actions → *Variables*: `KAIROS_GROQ_MODEL`, `KAIROS_GEMINI_MODEL` of `KAIROS_CLAUDE_MODEL`.
+- **Schema uitgeschakeld?** GitHub kan geplande workflows in een openbaar project stilzetten na 60 dagen zonder activiteit. Zet hem dan terug aan onder Actions.
+
+## Bestanden
+
+- `index.html`: de app (werkt ook offline met de laatste desk).
+- `engine/desk.py`: haalt de data op, rekent het factormodel uit en schrijft `data/desk.json` en `data/runs.json`.
+- `.github/workflows/`: het schema (`desk.yml`) en het publiceren van de app (`pages.yml`).
+
+Geen financieel advies. Koersen zijn momentopnames en lopen achter op je broker.
