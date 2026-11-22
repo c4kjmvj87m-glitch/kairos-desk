@@ -803,6 +803,9 @@ def claude_call(system, user, key, max_tokens):
                "system": system, "messages": [{"role": "user", "content": user}]}
     r = api_json("https://api.anthropic.com/v1/messages", headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
                  payload=payload, tries=3)
+    u = r.get("usage") or {}
+    tin, tout = u.get("input_tokens") or 0, u.get("output_tokens") or 0
+    log(f"[i] Claude: {tin} tokens in, {tout} uit (ongeveer ${tin * 0.10 / 1e6 + tout * 0.50 / 1e6:.4f}), einde: {r.get('stop_reason')}")
     txt = "".join(b.get("text", "") for b in r.get("content", []) if b.get("type") == "text")
     if not txt.strip():
         raise ValueError(f"leeg antwoord (stop_reason {r.get('stop_reason')})")
@@ -1023,6 +1026,7 @@ def step2_prompt(pack, assets, session):
             L.append(f"    · level {o['kind']} {nl(o['p'], dp)}: {nl(dist, 1)}% {pos} de koers ({o['note']})")
     nxt = "de volgende sessie (morgen Londen en New York)" if session == "close" else "de komende sessie"
     L += ["", f"OPDRACHT 2: schrijf de desk-tekst voor {nxt}.",
+          "Noem bij events de dag en het uur uit de kalender (bijvoorbeeld 'woensdag 14:30'); zeg alleen 'morgen' als het event echt morgen is.",
           "Regels: volg de labels hierboven en spreek ze nooit tegen. Noem rente, dollar, VIX en momentum alleen met de richting uit de factorregels "
           "(staat er 'rente daalt', schrijf dan nooit 'stijgende rente'). Zet geen scores in de tekst. Verzin geen niveaus: gebruik alleen de levels hierboven.",
           "Supply & demand-logica: een short-idee hoort bij een supply-zone BOVEN de koers, na een sweep van de highs boven die zone en een break naar beneden. "
