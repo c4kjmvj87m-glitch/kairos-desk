@@ -228,6 +228,21 @@ def yahoo(sym, max_jump=0.25):
     return _series(bars, m.get("regularMarketPrice"), datetime.fromtimestamp(pt, UTC) if pt else None, "Yahoo Finance", sym, tz, max_jump)
 
 
+def yahoo_at(sym, ts):
+    """Koers van sym (5-minutenbalk) op of vlak voor tijdstip ts, voor een eerlijke vergelijking met een spotprijs."""
+    q = urllib.parse.quote(sym, safe="")
+    j = json.loads(fetch(f"https://query1.finance.yahoo.com/v8/finance/chart/{q}?range=5d&interval=5m&includePrePost=true", tries=1))
+    r = ((j.get("chart") or {}).get("result") or [{}])[0]
+    closes = (((r.get("indicators") or {}).get("quote") or [{}])[0]).get("close") or []
+    best = None
+    for t, c in zip(r.get("timestamp") or [], closes):
+        if c is not None and t <= ts.timestamp():
+            best = (t, c)
+    if not best:
+        raise RuntimeError("geen 5-minutenkoers voor dat tijdstip")
+    return best[1], datetime.fromtimestamp(best[0], UTC)
+
+
 def stooq(sym, max_jump=0.25):
     d1 = (NOW - timedelta(days=430)).strftime("%Y%m%d")
     d2 = (NOW + timedelta(days=2)).strftime("%Y%m%d")
@@ -346,7 +361,15 @@ def to_spot(s, metal):
     if not 0.96 < px / s["px"] < 1.04:
         log(f"[!] spot {metal} {px:.2f} wijkt te veel af van de future {s['px']:.2f}; de future blijft staan")
         return False
-    basis = s["px"] - px
+    basis, how = s["px"] - px, f"laatste future-koers ({s['at']:%a %H:%M} UTC)" if s.get("at") else "laatste future-koers"
+    try:
+        fpx, ft = yahoo_at(s["sym"], at)
+        if abs((at - ft).total_seconds()) <= 30 * 60:
+            basis, how = fpx - px, f"future om {ft:%a %H:%M} UTC, spot om {at:%a %H:%M} UTC"
+    except Exception as e:
+        log(f"[i] {metal}: geen 5-minutenkoers van de future ({str(e)[:100]})")
+    if not -0.006 < basis / px < 0.03:
+        log(f"[!] {metal}: verschil future-spot {basis:+.2f} is ongewoon ({how})")
     for b in s["bars"]:
         for k in ("o", "h", "l", "c"):
             if isinstance(b.get(k), (int, float)):
@@ -362,7 +385,7 @@ def to_spot(s, metal):
     s["sym"] = f"{metal}/USD"
     s["note"] = "niveaus via de COMEX-future"
     s["basis"] = round(basis, 2)
-    log(f"[ok] {metal} spot {px:.2f} via {src}; verschil met de future {basis:+.2f}")
+    log(f"[ok] {metal} spot {px:.2f} via {src}; verschil met de future {basis:+.2f} ({how})")
     return True
 
 
