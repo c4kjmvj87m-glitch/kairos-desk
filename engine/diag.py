@@ -1,81 +1,66 @@
-"""Diagnose: welke gratis bronnen werken vanaf GitHub? Alleen lezen, schrijft niets."""
-import json, lzma, struct, time, urllib.request, urllib.error
+"""Diagnose 2: Dukascopy-details, Stocktwits-meter, Fed-agenda en NY Fed. Alleen lezen."""
+import json, lzma, re, struct, time, urllib.request, urllib.error
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
 
 
-def get(url, raw=False, headers=None, timeout=25):
-    h = {"User-Agent": UA, "Accept": "*/*"}
-    h.update(headers or {})
+def get(url, raw=False, timeout=30):
     t = time.time()
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=timeout) as r:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=timeout) as r:
             b = r.read()
             return r.status, (b if raw else b.decode("utf-8", "replace")), time.time() - t
     except urllib.error.HTTPError as e:
-        return e.code, (e.read()[:300] if raw else e.read().decode("utf-8", "replace")[:300]), time.time() - t
+        return e.code, b"" if raw else "", time.time() - t
     except Exception as e:
         return None, f"{type(e).__name__}: {e}", time.time() - t
 
 
-def show(name, url, fn=None, **kw):
-    st, body, dt = get(url, **kw)
-    info = ""
-    if st == 200 and fn:
-        try:
-            info = fn(body)
-        except Exception as e:
-            info = f"parse fout: {type(e).__name__}: {e}"
-    elif st != 200:
-        info = (body[:160] if isinstance(body, str) else repr(body[:80]))
-    print(f"[{st}] {name} ({dt:.1f}s) {info}"[:900], flush=True)
-
-
-def yh(body):
-    j = json.loads(body)
-    r = j["chart"]["result"][0]
-    m = r["meta"]
-    ts = r.get("timestamp") or []
-    q = r["indicators"]["quote"][0]
-    last = [(datetime.fromtimestamp(t, timezone.utc).strftime("%a %d %H:%M"), c) for t, c in zip(ts[-3:], q["close"][-3:])]
-    return f"px={m.get('regularMarketPrice')} prev={m.get('chartPreviousClose')} t={datetime.fromtimestamp(m.get('regularMarketTime', 0), timezone.utc):%a %H:%M} n={len(ts)} last={last}"
-
-
-def st_stream(body):
-    j = json.loads(body)
-    msgs = j.get("messages") or []
-    bull = sum(1 for m in msgs if ((m.get("entities") or {}).get("sentiment") or {}).get("basic") == "Bullish")
-    bear = sum(1 for m in msgs if ((m.get("entities") or {}).get("sentiment") or {}).get("basic") == "Bearish")
-    sym = j.get("symbol") or {}
-    return f"n={len(msgs)} bull={bull} bear={bear} keys={list(sym.keys())[:12]} first={msgs[0]['created_at'] if msgs else '-'}"
-
-
-def duka(body):
-    data = lzma.decompress(body)
-    n = len(data) // 24
-    recs = [struct.unpack(">5if", data[i * 24:(i + 1) * 24]) for i in (0, n - 1)] if n else []
-    return f"{n} candles; first={recs[0] if recs else '-'} last={recs[-1] if recs else '-'}"
+def candles(b, scale):
+    if not b:
+        return []
+    d = lzma.decompress(b)
+    return [(x[0], x[1] / scale, x[2] / scale, x[3] / scale, x[4] / scale) for x in (struct.unpack(">5if", d[i:i + 24]) for i in range(0, len(d), 24))]
 
 
 now = datetime.now(timezone.utc)
-print("NU", now.isoformat())
-for s, rng, iv in (("GC=F", "1mo", "1h"), ("ES=F", "5d", "5m"), ("NQ=F", "5d", "5m"), ("^GSPC", "5d", "5m"), ("^NDX", "5d", "5m"),
-                   ("DX-Y.NYB", "1mo", "1h"), ("HG=F", "5d", "1d"), ("EURUSD=X", "5d", "1d"), ("NZDUSD=X", "5d", "1d"), ("^TNX", "5d", "1d"),
-                   ("2YY=F", "5d", "1d"), ("ZQZ26.CBT", "5d", "1d"), ("ZQF27.CBT", "5d", "1d")):
-    show(f"yahoo {s} {iv}", f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(s)}?range={rng}&interval={iv}&includePrePost=true", yh)
-show("stocktwits GLD stream", "https://api.stocktwits.com/api/2/streams/symbol/GLD.json", st_stream)
-show("stocktwits SPY stream", "https://api.stocktwits.com/api/2/streams/symbol/SPY.json", st_stream)
-show("stocktwits GLD page", "https://stocktwits.com/symbol/GLD", lambda b: f"{len(b)} tekens, sentiment-woorden: {[w for w in ('sentimentScore', 'Bullish', 'Bearish', 'sentiment') if w in b]}")
-y = now.year
-show("treasury nominaal", f"https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/{y}/all?type=daily_treasury_yield_curve&field_tdr_date_value={y}&page&_format=csv",
-     lambda b: b.splitlines()[0][:200] + " | " + b.splitlines()[1][:120])
-show("ff volgende week", "https://nfs.faireconomy.media/ff_calendar_nextweek.json", lambda b: f"{len(json.loads(b))} events")
-show("ff deze week", "https://nfs.faireconomy.media/ff_calendar_thisweek.json", lambda b: json.dumps(json.loads(b)[0])[:300])
-d = now - timedelta(days=3)
-show("dukascopy XAUUSD min", f"https://datafeed.dukascopy.com/datafeed/XAUUSD/{d.year}/{d.month - 1:02d}/{d.day:02d}/BID_candles_min_1.bi5", duka, raw=True)
-show("dukascopy XAUUSD hour (maand ervoor)", f"https://datafeed.dukascopy.com/datafeed/XAUUSD/{d.year}/{d.month - 2:02d}/BID_candles_hour_1.bi5", duka, raw=True)
-show("swissquote XAU", "https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD", lambda b: b[:200])
-show("gold-api XAU", "https://api.gold-api.com/price/XAU", lambda b: b[:200])
-show("cme fedwatch", "https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html", lambda b: f"{len(b)} tekens")
-show("investing fed rate monitor", "https://www.investing.com/central-banks/fed-rate-monitor", lambda b: f"{len(b)} tekens")
+print("NU", now.isoformat(), flush=True)
+B = "https://datafeed.dukascopy.com/datafeed"
+for inst, sc in (("XAUUSD", 1000), ("USA500IDXUSD", 1000), ("USATECHIDXUSD", 1000), ("DOLLARIDXUSD", 1000)):
+    for y in (now.year, now.year - 1):
+        st, b, dt = get(f"{B}/{inst}/{y}/BID_candles_day_1.bi5", raw=True)
+        c = candles(b, sc) if st == 200 else []
+        print(f"[{st}] {inst} dag {y} ({dt:.1f}s) n={len(c)} laatste={c[-1] if c else '-'}", flush=True)
+    d = now - timedelta(days=3)
+    st, b, dt = get(f"{B}/{inst}/{d.year}/{d.month - 1:02d}/{d.day:02d}/BID_candles_min_1.bi5", raw=True)
+    c = candles(b, sc) if st == 200 else []
+    print(f"[{st}] {inst} min {d:%d-%m} ({dt:.1f}s) n={len(c)} eerste={c[0] if c else '-'}", flush=True)
+# parallel: 12 days of minute files for gold
+days = [now - timedelta(days=i) for i in range(1, 13)]
+t0 = time.time()
+with ThreadPoolExecutor(8) as ex:
+    res = list(ex.map(lambda d: get(f"{B}/XAUUSD/{d.year}/{d.month - 1:02d}/{d.day:02d}/BID_candles_min_1.bi5", raw=True), days))
+print(f"parallel 12 min-bestanden: {time.time() - t0:.1f}s statussen={[r[0] for r in res]} groottes={[len(r[1]) for r in res]}", flush=True)
+# today's ticks per hour (completed hours)
+h0 = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+st, b, dt = get(f"{B}/XAUUSD/{h0.year}/{h0.month - 1:02d}/{h0.day:02d}/{h0.hour:02d}h_ticks.bi5", raw=True)
+n = len(lzma.decompress(b)) // 20 if st == 200 and b else 0
+print(f"[{st}] XAUUSD ticks {h0:%d-%m %H}h ({dt:.1f}s) ticks={n}", flush=True)
+yday = now - timedelta(days=1)
+st, b, dt = get(f"{B}/XAUUSD/{yday.year}/{yday.month - 1:02d}/{yday.day:02d}/BID_candles_min_1.bi5", raw=True)
+print(f"[{st}] XAUUSD min gisteren {yday:%d-%m} ({dt:.1f}s) bytes={len(b) if isinstance(b, bytes) else b}", flush=True)
+# Stocktwits page: look for the sentiment meter
+st, page, dt = get("https://stocktwits.com/symbol/GLD")
+for pat in (r'"sentimentChange"[^{}]{0,200}', r'"sentiment"\s*:\s*\{[^{}]{0,300}\}', r'sentimentScore[^,]{0,80}', r'"valueNormalized"[^,]{0,40}', r'"messageVolume"[^{}]{0,200}'):
+    m = re.findall(pat, page)[:3]
+    print(f"stocktwits {pat[:24]}: {m}"[:500], flush=True)
+st, b, dt = get("https://api.stocktwits.com/api/2/symbols/GLD/sentiment.json")
+print(f"[{st}] stocktwits sentiment.json {str(b)[:200]}", flush=True)
+# Fed calendar and NY Fed EFFR
+st, page, dt = get("https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm")
+yrs = re.findall(r"(\d{4}) FOMC Meetings", page)
+print(f"[{st}] fed agenda ({dt:.1f}s) jaren={yrs[:4]} stukje={re.sub(r'\s+', ' ', page[page.find('2026 FOMC Meetings'):page.find('2026 FOMC Meetings') + 900])[:600] if '2026 FOMC Meetings' in page else '-'}", flush=True)
+st, b, dt = get("https://markets.newyorkfed.org/api/rates/unsecured/effr/last/1.json")
+print(f"[{st}] NY Fed EFFR {b[:300] if isinstance(b, str) else b}", flush=True)
