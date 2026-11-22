@@ -32,7 +32,7 @@ jobs:
         run: |
           git config user.name "kairos-desk-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/desk.json data/runs.json
+          git add data/desk.json data/runs.json data/state.json
           if git diff --cached --quiet; then echo "Geen wijzigingen"; exit 0; fi
           git commit -q -m "Desk-run $(TZ=Europe/Brussels date '+%Y-%m-%d %H:%M')"
           for i in 1 2 3; do git pull --rebase -q && git push -q && exit 0; sleep 5; done

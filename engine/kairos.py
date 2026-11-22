@@ -38,7 +38,9 @@ CALC = "berekend uit koersdata"
 PRIMARY = ["XAUUSD", "US500", "US100"]
 NAMES = {"XAUUSD": "Goud", "US500": "S&P 500", "US100": "Nasdaq 100"}
 DP = {"XAUUSD": 2, "US500": 2, "US100": 2, "DXY": 3}
-SEARCHES = int(os.environ.get("KAIROS_SEARCHES") or 3)
+SEARCHES = int(os.environ.get("KAIROS_SEARCHES") or 4)
+STATE_PATH = os.path.join(L.DATA_DIR, "state.json")
+STATE = {}
 DATA_DIR = L.DATA_DIR
 
 
@@ -183,6 +185,35 @@ def shift(bars, basis):
     return [{**b, "o": b["o"] - basis, "h": b["h"] - basis, "l": b["l"] - basis, "c": b["c"] - basis} for b in bars]
 
 
+def shift_by(bars, basis_at):
+    out = []
+    for b in bars:
+        k = basis_at(b["t"])
+        out.append({**b, "o": b["o"] - k, "h": b["h"] - k, "l": b["l"] - k, "c": b["c"] - k})
+    return out
+
+
+def basis_lookup(contract, now_basis, now_ts):
+    """Het verschil future-spot verandert langzaam (en soms snel, zoals rond een weekend). Elke run bewaart het gemeten
+    verschil; oude kaarsen worden omgerekend met het verschil dat het dichtst bij dat moment gemeten is."""
+    log_ = [x for x in STATE.get("goldBasis", []) if x.get("c") == contract]
+    pts = []
+    for x in log_:
+        try:
+            pts.append((datetime.fromisoformat(x["t"].replace("Z", "+00:00")).timestamp(), float(x["b"])))
+        except (KeyError, ValueError):
+            pass
+    pts.append((now_ts, now_basis))
+    pts.sort()
+
+    def at(ts):
+        if ts >= now_ts - 2 * 3600:
+            return now_basis
+        best = min(pts, key=lambda p: abs(p[0] - ts))
+        return best[1] if abs(best[0] - ts) <= 16 * 3600 else now_basis
+    return at
+
+
 def last_at_or_before(bars, ts):
     best = None
     for b in bars:
@@ -228,8 +259,13 @@ def gold_series():
         at = datetime.fromtimestamp(m.get("regularMarketTime") or NOW.timestamp(), UTC)
         basis, pxsrc = fut_last - px, "Yahoo (goud-future, geen spot gevonden)"
         MISSING.append("spotprijs goud (future gebruikt)")
-    h1 = shift(Y["h1"]["bars"], basis)
-    m15 = shift((Y["m15"] or {}).get("bars") or [], basis)
+    at_basis = basis_lookup(c, basis, at.timestamp())
+    h1 = shift_by(Y["h1"]["bars"], at_basis)
+    m15 = shift_by((Y["m15"] or {}).get("bars") or [], at_basis)
+    if spot and how == "op hetzelfde moment":
+        gl = [x for x in STATE.get("goldBasis", []) if x.get("t") != iso(at)]
+        gl.append({"t": iso(at), "c": c, "b": round(basis, 2)})
+        STATE["goldBasis"] = gl[-80:]
     days = day_candles(h1)
     today = days[-1]
     prev = days[-2]["c"] if len(days) >= 2 else None
@@ -800,6 +836,7 @@ def main():
     desk_path, runs_path = os.path.join(DATA_DIR, "desk.json"), os.path.join(DATA_DIR, "runs.json")
     prev = L.load_json(desk_path, {})
     runs = L.load_json(runs_path, [])
+    STATE.update(L.load_json(STATE_PATH, {}))
 
     # ---- gegevens ophalen (tegelijk waar het kan)
     with ThreadPoolExecutor(3) as ex:
@@ -900,7 +937,9 @@ def main():
                "the Fed or the US stock market. Accounts that matter: The Kobeissi Letter, Nick Timiraos (WSJ Fed reporter), Walter Bloomberg "
                "(@DeItaone), First Squawk, FinancialJuice, Peter Schiff, World Gold Council, Mohamed El-Erian, Fed officials, and the US "
                "president on Truth Social. Search with the account or topic, the word X or tweet, and today's date in words "
-               "(for example: Kobeissi Letter X post gold November 23 2026; site:x.com DeItaone Fed). Keep only the post itself "
+               "(for example: Kobeissi Letter X post gold November 23 2026; site:x.com DeItaone Fed). Use each search for a different group: "
+               "(a) Walter Bloomberg, First Squawk or FinancialJuice headlines; (b) gold: Kobeissi, Peter Schiff, World Gold Council; "
+               "(c) the Fed: Nick Timiraos or Fed officials; (d) the US president on Truth Social about markets. Keep only the post itself "
                "(x.com, twitter.com or truthsocial.com) or a news page that quotes the post with its date. Keep only posts whose date you "
                "can see. Never invent a post, handle, number of views or link. who is only the name of the account.",
                ]
@@ -1172,6 +1211,8 @@ def main():
     runs.sort(key=lambda x: x.get("asof") or "")
     with open(runs_path, "w", encoding="utf-8") as fh:
         json.dump(runs[-600:], fh, ensure_ascii=False, separators=(",", ":"))
+    with open(STATE_PATH, "w", encoding="utf-8") as fh:
+        json.dump(STATE, fh, ensure_ascii=False, separators=(",", ":"))
     size = len(json.dumps(desk, ensure_ascii=False))
     log(f"Klaar. AI: {ENGINE['ai']}. Kosten zoeken ongeveer ${COST[0]:.4f}. Desk {size} tekens. Ontbrak: {', '.join(MISSING) or 'niets'}.")
 
